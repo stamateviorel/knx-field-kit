@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.knxfieldkit.bus.CalimeroKnxBusClient
+import dev.knxfieldkit.mobile.MobileFieldApp
 import dev.knxfieldkit.model.ConnectionState
 import java.awt.FileDialog
 import java.awt.Frame
@@ -54,7 +56,10 @@ fun pickSaveFile(title: String, defaultName: String): File? {
 }
 
 @Composable
-fun KnxFieldKitApp(controller: AppController) {
+fun KnxFieldKitApp(
+    controller: AppController,
+    onOpenMobilePreview: (() -> Unit)? = null,
+) {
     val state by controller.uiState.collectAsState()
     val isConnected = state.connectionState is ConnectionState.Connected
     val connectionLabel = when (val cs = state.connectionState) {
@@ -192,6 +197,13 @@ fun KnxFieldKitApp(controller: AppController) {
                     icon = Icons.Default.Router,
                     onClick = { controller.toggleConnectDialog(true) },
                 )
+                if (onOpenMobilePreview != null) {
+                    DesktopButton(
+                        text = "Phone UI",
+                        icon = Icons.Default.Smartphone,
+                        onClick = onOpenMobilePreview,
+                    )
+                }
             }
             HorizontalDivider(thickness = 1.dp, color = WorkbenchColors.BorderSubtle)
 
@@ -364,7 +376,8 @@ fun KnxFieldKitApp(controller: AppController) {
 }
 
 fun main(args: Array<String>) = application {
-    val controller = remember { AppController() }
+    val controller = remember { AppController(hardwareClientFactory = { CalimeroKnxBusClient(it) }) }
+    var showMobileWindow by remember { mutableStateOf("--mobile-preview" in args) }
     LaunchedEffect(Unit) {
         if ("--connect-sim" in args) {
             controller.connectSimulator()
@@ -408,7 +421,40 @@ fun main(args: Array<String>) = application {
             onDispose { dropTarget.isActive = false }
         }
         KnxFieldKitTheme {
-            KnxFieldKitApp(controller)
+            KnxFieldKitApp(
+                controller = controller,
+                onOpenMobilePreview = { showMobileWindow = true },
+            )
+        }
+    }
+    if (showMobileWindow) {
+        Window(
+            onCloseRequest = { showMobileWindow = false },
+            title = "KNX Field Kit — Android Mobile Companion (412×915)",
+            state = rememberWindowState(width = 412.dp, height = 915.dp),
+        ) {
+            MobileFieldApp(
+                controller = controller,
+                onOpenProjectFile = {
+                    pickOpenFile("Open .knxproj or .knxkeys")?.let(controller::openProjectOrKeyringFile)
+                },
+                onLoadEncryptedSample = {
+                    val sampleFile = File("samples", "penthouse_ets6_encrypted.knxproj")
+                    controller.generateAndPromptEncryptedSample(sampleFile, samplePassword = "knx2026")
+                },
+                onShareHtmlReport = {
+                    pickSaveFile("Export HTML Commissioning Report", "knx-commissioning-report.html")
+                        ?.let { controller.exportHtmlCommissioningReport(it) }
+                },
+                onShareMonitorCsv = {
+                    pickSaveFile("Export Bus Monitor CSV", "knx-bus-monitor.csv")
+                        ?.let { controller.exportMonitorCsv(it) }
+                },
+                onShareMarkdownSummary = {
+                    pickSaveFile("Export Project Summary Markdown", "knx-project-summary.md")
+                        ?.let { controller.exportProjectMarkdown(it) }
+                },
+            )
         }
     }
 }

@@ -96,8 +96,8 @@ fun PasswordUnlockDialog(prompt: PasswordPromptState, onSubmit: (String) -> Unit
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (prompt.errorMessage != null) {
-                    Text(prompt.errorMessage, color = WorkbenchColors.AccentRed, fontSize = 11.sp)
+                prompt.errorMessage?.let { err ->
+                    Text(err, color = WorkbenchColors.AccentRed, fontSize = 11.sp)
                 }
             }
         },

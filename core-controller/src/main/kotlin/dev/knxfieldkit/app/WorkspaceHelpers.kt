@@ -9,15 +9,41 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.Properties
 
-data class SavedPreferences(val recentFiles: List<File> = emptyList(), val lastGatewayHost: String = "192.168.1.10", val lastGatewayPort: Int = 3671, val lastUseNat: Boolean = false)
+data class SavedPreferences(
+    val recentFiles: List<File> = emptyList(),
+    val lastGatewayHost: String = "192.168.1.10",
+    val lastGatewayPort: Int = 3671,
+    val lastUseNat: Boolean = false,
+)
 
 object UserPrefsStore {
-    private val prefsFile = File(System.getProperty("user.home"), ".knx-field-kit/prefs.properties")
+    @Volatile
+    private var prefsFile: File = resolveDefaultPrefsFile()
     private val properties = Properties()
 
     init {
+        reloadFromDisk()
+    }
+
+    private fun resolveDefaultPrefsFile(): File {
+        val home = System.getProperty("user.home")
+            ?.takeIf { it.isNotBlank() && it != "/" }
+            ?: System.getProperty("java.io.tmpdir", ".")
+        return File(home, ".knx-field-kit/prefs.properties")
+    }
+
+    @Synchronized
+    fun configureBaseDir(dir: File) {
+        prefsFile = File(dir, "prefs.properties")
+        properties.clear()
+        reloadFromDisk()
+    }
+
+    @Synchronized
+    private fun reloadFromDisk() {
         runCatching {
-            if (!prefsFile.parentFile.exists()) prefsFile.parentFile.mkdirs()
+            val parent = prefsFile.parentFile
+            if (parent != null && !parent.exists()) parent.mkdirs()
             if (prefsFile.exists()) {
                 FileInputStream(prefsFile).use { properties.load(InputStreamReader(it, StandardCharsets.UTF_8)) }
             }
@@ -61,7 +87,8 @@ object UserPrefsStore {
 
     private fun saveProperties() {
         runCatching {
-            if (!prefsFile.parentFile.exists()) prefsFile.parentFile.mkdirs()
+            val parent = prefsFile.parentFile
+            if (parent != null && !parent.exists()) parent.mkdirs()
             FileOutputStream(prefsFile).use {
                 OutputStreamWriter(it, StandardCharsets.UTF_8).use { writer -> properties.store(writer, null) }
             }
@@ -81,10 +108,10 @@ object HtmlReportExporter {
         groupLiveValues: Map<GroupAddress, GroupValueEntry>,
     ) {
         val html = buildString {
-            append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>KNX Field Kit Commissioning Report</title><style>")
+            append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>KNX Field Kit Commissioning Report</title><style>")
             append(
                 """
-                body { font-family: Segoe UI, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; }
+                body { font-family: Segoe UI, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
                 h1, h2 { color: #38bdf8; }
                 .score { display: inline-block; padding: 8px 16px; border-radius: 8px; background: #1e293b; font-size: 20px; font-weight: bold; color: #2ecc71; }
                 table { width: 100%; border-collapse: collapse; margin-bottom: 24px; background: #1e293b; }
@@ -125,6 +152,7 @@ object HtmlReportExporter {
             }
             append("</table></body></html>")
         }
+        targetFile.parentFile?.mkdirs()
         targetFile.writeText(html, StandardCharsets.UTF_8)
     }
 }

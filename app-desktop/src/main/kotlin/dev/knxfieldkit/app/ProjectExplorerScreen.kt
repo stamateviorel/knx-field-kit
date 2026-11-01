@@ -130,9 +130,9 @@ fun ProjectExplorerScreen(
                         color = if (proj.passwordProtected) WorkbenchColors.AccentAmber else WorkbenchColors.AccentSky,
                     )
                 }
-                if (state.keyring != null) {
+                state.keyring?.let { kr ->
                     StatusPill(
-                        text = "Keyring: ${state.keyring.groupKeysHex.size} Keys",
+                        text = "Keyring: ${kr.groupKeysHex.size} Keys",
                         color = WorkbenchColors.AccentEmerald,
                     )
                 }

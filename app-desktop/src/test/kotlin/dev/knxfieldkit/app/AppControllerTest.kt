@@ -2,6 +2,8 @@ package dev.knxfieldkit.app
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.unit.Density
+import dev.knxfieldkit.mobile.MobileFieldApp
 import dev.knxfieldkit.model.ConnectionState
 import dev.knxfieldkit.model.GroupAddress
 import dev.knxfieldkit.model.IndividualAddress
@@ -185,6 +187,94 @@ class AppControllerTest {
             scene.close()
             controller.close()
             tmpReportDir.deleteRecursively()
+        }
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Test
+    fun androidMobileFieldAppRendersAllPhoneScreensCleanly() = runBlocking {
+        val controller = AppController()
+        val screenshotDir = System.getProperty("knx.screenshot.dir")?.let(::File)?.apply { mkdirs() }
+        // 412x915 dp Android flagship phone viewport @ 2x density -> 824x1830 px
+        val scene = ImageComposeScene(width = 824, height = 1830, density = Density(2f)) {
+            MobileFieldApp(controller = controller)
+        }
+        try {
+            controller.runFullSiteCheck()
+            var attempts = 0
+            while (controller.uiState.value.siteCheckReport == null && attempts < 180) {
+                delay(50L)
+                attempts++
+            }
+            assertNotNull(controller.uiState.value.siteCheckReport)
+
+            controller.runProjectLineAudit(1, 1)
+            attempts = 0
+            while (controller.uiState.value.isAuditingLine && attempts < 60) {
+                delay(40L)
+                attempts++
+            }
+
+            var clockNs = 1_000_000_000L
+            fun renderMobile(fileName: String) {
+                scene.render(clockNs)
+                clockNs += 300_000_000L
+                val image = scene.render(clockNs)
+                clockNs += 50_000_000L
+                assertEquals(824, image.width)
+                assertEquals(1830, image.height)
+                if (screenshotDir != null) {
+                    val pngBytes = image.encodeToData(EncodedImageFormat.PNG)?.bytes
+                    assertNotNull(pngBytes)
+                    File(screenshotDir, fileName).writeBytes(pngBytes)
+                }
+            }
+
+            // 1. Mobile Explorer — Topology Lines & Devices
+            controller.selectTab(AppTab.PROJECT)
+            controller.selectExplorerNode(ExplorerSelection.TopologyRoot)
+            delay(50L)
+            renderMobile("knx-android-explorer.png")
+
+            // 2. Mobile Explorer — Device Group Objects (C R W T U flags + 1-tap controls)
+            controller.openDeviceObjectsInExplorer(IndividualAddress(1, 1, 20))
+            delay(50L)
+            renderMobile("knx-android-device-objects.png")
+
+            // 3. Mobile Live Bus Monitor (emit live DPT writes so decoded values shine)
+            controller.writeGroupSwitch("1/1/1", true)
+            controller.writeGroupPercent("1/2/2", 75.0)
+            controller.writeGroupFloat16("1/3/1", 22.4)
+            delay(80L)
+            controller.selectTab(AppTab.MONITOR)
+            delay(80L)
+            renderMobile("knx-android-monitor.png")
+
+            // 4. Mobile Smart DPT Sender
+            controller.selectTab(AppTab.SENDER)
+            controller.selectGroupAddressForSender("1/1/1")
+            delay(80L)
+            renderMobile("knx-android-sender.png")
+
+            // 5. Mobile Field Diagnostics & Readiness Score
+            controller.selectTab(AppTab.DIAGNOSTICS)
+            delay(80L)
+            renderMobile("knx-android-diagnostics.png")
+
+            // 6. Mobile Wi-Fi KNXnet/IP Gateway Connect Bottom Sheet
+            controller.discoverGateways()
+            delay(150L)
+            attempts = 0
+            while (controller.uiState.value.isDiscoveringGateways && attempts < 80) {
+                delay(50L)
+                attempts++
+            }
+            controller.toggleConnectDialog(true)
+            delay(80L)
+            renderMobile("knx-android-connect-sheet.png")
+        } finally {
+            scene.close()
+            controller.close()
         }
     }
 }

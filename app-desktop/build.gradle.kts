@@ -8,12 +8,20 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
+    sourceSets {
+        named("main") {
+            kotlin.srcDir("../app-android/src/main/kotlin/dev/knxfieldkit/mobile")
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core-model"))
     implementation(project(":core-knxproj"))
     implementation(project(":core-bus"))
+    implementation(project(":core-controller"))
+    implementation(libs.calimero.core)
+    implementation(libs.calimero.device)
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)

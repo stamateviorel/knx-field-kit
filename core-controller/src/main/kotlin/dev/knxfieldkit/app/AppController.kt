@@ -1,8 +1,8 @@
 package dev.knxfieldkit.app
 
-import dev.knxfieldkit.bus.CalimeroKnxBusClient
 import dev.knxfieldkit.bus.DemoKnxProjectFactory
 import dev.knxfieldkit.bus.KnxBusClient
+import dev.knxfieldkit.bus.PureKnxNetIpClient
 import dev.knxfieldkit.bus.SimulatedKnxBusClient
 import dev.knxfieldkit.knxproj.EtsCrypto
 import dev.knxfieldkit.knxproj.InvalidPasswordException
@@ -10,7 +10,6 @@ import dev.knxfieldkit.knxproj.KnxKeyringReader
 import dev.knxfieldkit.knxproj.KnxProjArchiveReader
 import dev.knxfieldkit.knxproj.KnxProjParser
 import dev.knxfieldkit.knxproj.PasswordRequiredException
-import dev.knxfieldkit.model.AuditStatus
 import dev.knxfieldkit.model.ApciType
 import dev.knxfieldkit.model.BusConnectionConfig
 import dev.knxfieldkit.model.BusHealthAnalyzer
@@ -49,10 +48,10 @@ import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.AesKeyStrength
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import java.io.File
-import java.nio.file.Files
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 enum class AppTab(val title: String) {
     PROJECT("Explorer"),
@@ -144,11 +143,14 @@ data class AppUiState(
     val isRunningFullSiteCheck: Boolean = false,
     val siteCheckProgressText: String = "",
     val siteCheckReport: SiteCheckReport? = null,
-    val statusMessage: String = "Ready — Drop any .knxproj / .knxkeys file onto the window or connect to the KNX bus",
+    val statusMessage: String = "Ready — Open any .knxproj / .knxkeys file or connect to the KNX bus",
 )
 
 class AppController(
     parentScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    hardwareClientFactory: (CoroutineScope) -> KnxBusClient = { PureKnxNetIpClient(it) },
+    private val multicastAcquireCallback: (() -> Unit)? = null,
+    private val multicastReleaseCallback: (() -> Unit)? = null,
 ) : AutoCloseable {
 
     private companion object {
@@ -159,7 +161,7 @@ class AppController(
 
     private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob())
     private val simulatedClient = SimulatedKnxBusClient(scope)
-    private val calimeroClient = CalimeroKnxBusClient(scope)
+    private val hardwareClient = hardwareClientFactory(scope)
 
     @Volatile
     private var activeClient: KnxBusClient = simulatedClient
@@ -184,7 +186,7 @@ class AppController(
 
     init {
         observeClient(simulatedClient, isSim = true)
-        observeClient(calimeroClient, isSim = false)
+        observeClient(hardwareClient, isSim = false)
     }
 
     private fun observeClient(client: KnxBusClient, isSim: Boolean) {
@@ -424,7 +426,8 @@ class AppController(
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    val tmpDir = Files.createTempDirectory("ets6-sample-").toFile()
+                    val baseTmp = targetFile.parentFile ?: File(System.getProperty("java.io.tmpdir", "."))
+                    val tmpDir = File(baseTmp, "ets6-sample-${System.currentTimeMillis()}").apply { mkdirs() }
                     try {
                         val masterXml = """
                             <?xml version="1.0" encoding="utf-8"?>
@@ -509,15 +512,22 @@ class AppController(
     fun discoverGateways() {
         scope.launch {
             _uiState.update { it.copy(isDiscoveringGateways = true) }
-            val realGateways = runCatching { calimeroClient.discoverGateways(2_500L) }.getOrDefault(emptyList())
-            val simGateways = simulatedClient.discoverGateways(100L)
-            val combined = realGateways + simGateways
-            _uiState.update {
-                it.copy(
-                    discoveredGateways = combined,
-                    isDiscoveringGateways = false,
-                    statusMessage = "Discovered ${realGateways.size} LAN KNXnet/IP gateway(s) + 1 Virtual Bus Simulator",
-                )
+            multicastAcquireCallback?.invoke()
+            try {
+                val realGateways = runCatching { hardwareClient.discoverGateways(2_500L) }.getOrDefault(emptyList())
+                val simGateways = simulatedClient.discoverGateways(100L)
+                val combined = realGateways + simGateways
+                _uiState.update {
+                    it.copy(
+                        discoveredGateways = combined,
+                        isDiscoveringGateways = false,
+                        statusMessage = "Discovered ${realGateways.size} Wi-Fi/LAN KNXnet/IP gateway(s) + 1 Virtual Bus Simulator",
+                    )
+                }
+            } finally {
+                if (_uiState.value.connectionState !is ConnectionState.Connected) {
+                    multicastReleaseCallback?.invoke()
+                }
             }
         }
     }
@@ -525,6 +535,7 @@ class AppController(
     fun connectSimulator() {
         scope.launch {
             runCatching { activeClient.disconnect() }
+            multicastReleaseCallback?.invoke()
             activeClient = simulatedClient
             _uiState.value.project?.let { simulatedClient.syncWithProject(it) }
             simulatedClient.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = true))
@@ -546,10 +557,11 @@ class AppController(
     ) {
         scope.launch {
             runCatching { activeClient.disconnect() }
-            activeClient = calimeroClient
+            multicastReleaseCallback?.invoke()
+            activeClient = hardwareClient
             val prefs = UserPrefsStore.saveGateway(host.trim(), port, useNat)
             try {
-                calimeroClient.connect(
+                hardwareClient.connect(
                     BusConnectionConfig.IpTunneling(
                         gatewayHost = host.trim(),
                         gatewayPort = port,
@@ -576,9 +588,10 @@ class AppController(
     fun connectRouting(multicastAddress: String = "224.0.23.12", port: Int = 3671) {
         scope.launch {
             runCatching { activeClient.disconnect() }
-            activeClient = calimeroClient
+            multicastAcquireCallback?.invoke()
+            activeClient = hardwareClient
             try {
-                calimeroClient.connect(BusConnectionConfig.IpRouting(multicastAddress = multicastAddress.trim(), port = port))
+                hardwareClient.connect(BusConnectionConfig.IpRouting(multicastAddress = multicastAddress.trim(), port = port))
                 _uiState.update {
                     it.copy(
                         showConnectDialog = false,
@@ -586,6 +599,7 @@ class AppController(
                     )
                 }
             } catch (e: Exception) {
+                multicastReleaseCallback?.invoke()
                 setStatus("KNXnet/IP Routing failed: ${e.message}")
             }
         }
@@ -594,6 +608,7 @@ class AppController(
     fun disconnectBus() {
         scope.launch {
             runCatching { activeClient.disconnect() }
+            multicastReleaseCallback?.invoke()
             setStatus("Disconnected from KNX bus")
         }
     }
@@ -676,10 +691,10 @@ class AppController(
         )
 
     fun writeGroupPercent(addressText: String, percent: Double) =
-        writeGroupInternal(addressText, DptCodec.encodePercent(percent), compact6Bit = false, summary = "${"%.0f".format(percent)} %")
+        writeGroupInternal(addressText, DptCodec.encodePercent(percent), compact6Bit = false, summary = "${String.format(Locale.US, "%.0f", percent)} %")
 
     fun writeGroupFloat16(addressText: String, value: Double) =
-        writeGroupInternal(addressText, DptCodec.encodeFloat16(value), compact6Bit = false, summary = "%.2f".format(value))
+        writeGroupInternal(addressText, DptCodec.encodeFloat16(value), compact6Bit = false, summary = String.format(Locale.US, "%.2f", value))
 
     fun writeGroupInt32(addressText: String, value: Int) =
         writeGroupInternal(addressText, DptCodec.encodeInt32(value), compact6Bit = false, summary = value.toString())
@@ -1069,7 +1084,7 @@ class AppController(
         }
     }
 
-    fun exportHtmlCommissioningReport(targetFile: File) {
+    fun exportHtmlCommissioningReport(targetFile: File, onDone: ((File) -> Unit)? = null) {
         val snap = _uiState.value
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -1081,11 +1096,12 @@ class AppController(
                     groupLiveValues = snap.groupLiveValues,
                 )
             }
-            setStatus("Exported HTML Commissioning Report to ${targetFile.absolutePath}")
+            setStatus("Exported HTML Commissioning Report to ${targetFile.name}")
+            onDone?.invoke(targetFile)
         }
     }
 
-    fun exportMonitorCsv(targetFile: File) {
+    fun exportMonitorCsv(targetFile: File, onDone: ((File) -> Unit)? = null) {
         scope.launch {
             val rows = _uiState.value.telegrams
             withContext(Dispatchers.IO) {
@@ -1110,13 +1126,15 @@ class AppController(
                         ).joinToString(",")
                     )
                 }
+                targetFile.parentFile?.mkdirs()
                 targetFile.writeText(sb.toString(), Charsets.UTF_8)
             }
-            setStatus("Exported ${rows.size} telegrams to ${targetFile.absolutePath}")
+            setStatus("Exported ${rows.size} telegrams to ${targetFile.name}")
+            onDone?.invoke(targetFile)
         }
     }
 
-    fun exportProjectMarkdown(targetFile: File) {
+    fun exportProjectMarkdown(targetFile: File, onDone: ((File) -> Unit)? = null) {
         val proj = _uiState.value.project ?: return
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -1147,9 +1165,11 @@ class AppController(
                 for (ga in proj.groupAddresses.values.sortedBy { it.address }) {
                     sb.appendLine("| `${ga.address}` | ${ga.name} | `${ga.dpt ?: "-"}` | ${ga.linkedObjects.size} |")
                 }
+                targetFile.parentFile?.mkdirs()
                 targetFile.writeText(sb.toString(), Charsets.UTF_8)
             }
-            setStatus("Exported project report to ${targetFile.absolutePath}")
+            setStatus("Exported project report to ${targetFile.name}")
+            onDone?.invoke(targetFile)
         }
     }
 
@@ -1162,7 +1182,8 @@ class AppController(
 
     override fun close() {
         simulatedClient.close()
-        calimeroClient.close()
+        hardwareClient.close()
+        multicastReleaseCallback?.invoke()
         scope.cancel()
     }
 }

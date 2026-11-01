@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Emerald KNX TP Bus Bar -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M26,52h56v6h-56z" />
+    <!-- Sky Top & Bottom Nodes -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M34,34h12v12h-12zM62,34h12v12h-12zM48,64h12v12h-12z" />
+    <!-- Vertical Taps -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M39,46h2v6h-2zM67,46h2v6h-2zM53,58h2v6h-2z" />
+</vector>

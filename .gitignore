@@ -23,5 +23,6 @@ Desktop.ini
 *.knxproj
 !**/src/test/resources/**/*.knxproj
 
-# Local AI scratch outputs
+# Local AI scratch outputs & root APK copy
 .local-ai-tmp/
+*.apk
