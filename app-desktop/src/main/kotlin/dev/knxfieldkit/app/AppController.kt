@@ -11,7 +11,10 @@ import dev.knxfieldkit.knxproj.KnxProjArchiveReader
 import dev.knxfieldkit.knxproj.KnxProjParser
 import dev.knxfieldkit.knxproj.PasswordRequiredException
 import dev.knxfieldkit.model.AuditStatus
+import dev.knxfieldkit.model.ApciType
 import dev.knxfieldkit.model.BusConnectionConfig
+import dev.knxfieldkit.model.BusHealthAnalyzer
+import dev.knxfieldkit.model.BusTelegram
 import dev.knxfieldkit.model.ConnectionState
 import dev.knxfieldkit.model.DeviceDiagnosticDetails
 import dev.knxfieldkit.model.DevicePingResult
@@ -26,6 +29,8 @@ import dev.knxfieldkit.model.KnxKeyring
 import dev.knxfieldkit.model.KnxProject
 import dev.knxfieldkit.model.LineAuditEntry
 import dev.knxfieldkit.model.LineAuditReport
+import dev.knxfieldkit.model.MainDpt
+import dev.knxfieldkit.model.SiteCheckReport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +77,10 @@ data class AppUiState(
     val activeTab: AppTab = AppTab.PROJECT,
     val project: KnxProject? = null,
     val projectSourceLabel: String = "Demo Villa Project",
+    val recentFiles: List<File> = emptyList(),
+    val savedGatewayHost: String = "192.168.1.10",
+    val savedGatewayPort: Int = 3671,
+    val savedGatewayUseNat: Boolean = false,
     val keyring: KnxKeyring? = null,
     val passwordPrompt: PasswordPromptState? = null,
     val connectionState: ConnectionState = ConnectionState.Disconnected,
@@ -83,9 +92,17 @@ data class AppUiState(
     val monitorPaused: Boolean = false,
     val monitorSearchQuery: String = "",
     val monitorGhostOnly: Boolean = false,
+    val selectedMonitorTelegramId: Long? = null,
     val groupLiveValues: Map<GroupAddress, GroupValueEntry> = emptyMap(),
+    val deviceStatuses: Map<IndividualAddress, DevicePingResult> = emptyMap(),
+    val explorerLocationView: Boolean = false,
+    val selectedDeviceAddress: IndividualAddress? = IndividualAddress(1, 1, 10),
+    val selectedInspectorGroup: GroupAddress? = null,
     val selectedGroupAddressInput: String = "1/1/1",
     val isPollingBatch: Boolean = false,
+    val walkTestActive: Boolean = false,
+    val walkTestGroupAddress: GroupAddress? = null,
+    val walkTestStepCount: Int = 0,
     val pingResults: List<DevicePingResult> = emptyList(),
     val isPinging: Boolean = false,
     val lineAuditReport: LineAuditReport? = null,
@@ -98,7 +115,10 @@ data class AppUiState(
     val isCheckingProgrammingMode: Boolean = false,
     val deviceDiagnostics: DeviceDiagnosticDetails? = null,
     val isReadingDiagnostics: Boolean = false,
-    val statusMessage: String = "Ready — Open a .knxproj file or connect to the KNX bus",
+    val isRunningFullSiteCheck: Boolean = false,
+    val siteCheckProgressText: String = "",
+    val siteCheckReport: SiteCheckReport? = null,
+    val statusMessage: String = "Ready — Drop any .knxproj / .knxkeys file onto the window or connect to the KNX bus",
 )
 
 class AppController(
@@ -120,11 +140,18 @@ class AppController(
 
     private var subnetScanJob: Job? = null
     private var batchPollJob: Job? = null
+    private var walkTestJob: Job? = null
+
+    private val initialPrefs = UserPrefsStore.load()
 
     private val _uiState = MutableStateFlow(
         AppUiState(
             project = DemoKnxProjectFactory.createDemoVillaProject(),
             projectSourceLabel = "Built-in Demo (Villa Horizon)",
+            recentFiles = initialPrefs.recentFiles,
+            savedGatewayHost = initialPrefs.lastGatewayHost,
+            savedGatewayPort = initialPrefs.lastGatewayPort,
+            savedGatewayUseNat = initialPrefs.lastUseNat,
         )
     )
     val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
@@ -208,7 +235,8 @@ class AppController(
                     val parsed = withContext(Dispatchers.IO) {
                         KnxProjParser.openAndParse(file, password = null)
                     }
-                    applyLoadedProject(parsed, file.name)
+                    val prefs = UserPrefsStore.recordRecentFile(file)
+                    applyLoadedProject(parsed, file.name, prefs.recentFiles)
                 }
             } catch (_: PasswordRequiredException) {
                 _uiState.update {
@@ -228,9 +256,11 @@ class AppController(
                     val kr = withContext(Dispatchers.IO) {
                         KnxKeyringReader.parseKeyring(prompt.file, password)
                     }
+                    val prefs = UserPrefsStore.recordRecentFile(prompt.file)
                     _uiState.update {
                         it.copy(
                             keyring = kr,
+                            recentFiles = prefs.recentFiles,
                             passwordPrompt = null,
                             statusMessage = "Unlocked keyring '${kr.projectName}' (${kr.groupKeysHex.size} group keys, ${kr.interfaces.size} interfaces)",
                         )
@@ -239,7 +269,8 @@ class AppController(
                     val parsed = withContext(Dispatchers.IO) {
                         KnxProjParser.openAndParse(prompt.file, password)
                     }
-                    applyLoadedProject(parsed, "${prompt.file.name} (Unlocked)")
+                    val prefs = UserPrefsStore.recordRecentFile(prompt.file)
+                    applyLoadedProject(parsed, "${prompt.file.name} (Unlocked)", prefs.recentFiles)
                 }
             } catch (_: InvalidPasswordException) {
                 _uiState.update {
@@ -261,16 +292,51 @@ class AppController(
         _uiState.update { it.copy(passwordPrompt = null) }
     }
 
-    private fun applyLoadedProject(project: KnxProject, label: String) {
+    fun loadDemoProject() {
+        applyLoadedProject(DemoKnxProjectFactory.createDemoVillaProject(), "Built-in Demo (Villa Horizon)")
+    }
+
+    fun setExplorerLocationView(byRoom: Boolean) {
+        _uiState.update { it.copy(explorerLocationView = byRoom) }
+    }
+
+    fun inspectDeviceInExplorer(address: IndividualAddress) {
+        _uiState.update { it.copy(selectedDeviceAddress = address, selectedInspectorGroup = null) }
+    }
+
+    fun inspectGroupInExplorer(address: GroupAddress) {
+        _uiState.update {
+            it.copy(
+                selectedInspectorGroup = address,
+                selectedGroupAddressInput = address.toString(),
+            )
+        }
+    }
+
+    fun selectMonitorTelegram(id: Long?) {
+        _uiState.update { it.copy(selectedMonitorTelegramId = id) }
+    }
+
+    private fun applyLoadedProject(
+        project: KnxProject,
+        label: String,
+        updatedRecent: List<File>? = null,
+    ) {
         simulatedClient.syncWithProject(project)
         val firstGa = project.groupAddresses.keys.firstOrNull()?.toString() ?: "1/1/1"
+        val firstDev = project.allDevices.keys.firstOrNull()
         _uiState.update {
             it.copy(
                 project = project,
                 projectSourceLabel = label,
+                recentFiles = updatedRecent ?: it.recentFiles,
                 passwordPrompt = null,
                 selectedGroupAddressInput = firstGa,
+                selectedDeviceAddress = firstDev,
+                selectedInspectorGroup = null,
+                deviceStatuses = emptyMap(),
                 lineAuditReport = null,
+                siteCheckReport = null,
                 statusMessage = "Loaded '${project.name}': ${project.allDevices.size} devices, ${project.groupAddresses.size} group addresses",
             )
         }
@@ -406,6 +472,7 @@ class AppController(
         scope.launch {
             runCatching { activeClient.disconnect() }
             activeClient = calimeroClient
+            val prefs = UserPrefsStore.saveGateway(host.trim(), port, useNat)
             try {
                 calimeroClient.connect(
                     BusConnectionConfig.IpTunneling(
@@ -419,6 +486,9 @@ class AppController(
                 _uiState.update {
                     it.copy(
                         showConnectDialog = false,
+                        savedGatewayHost = prefs.lastGatewayHost,
+                        savedGatewayPort = prefs.lastGatewayPort,
+                        savedGatewayUseNat = prefs.lastUseNat,
                         statusMessage = "Connected via KNXnet/IP Tunneling to $host:$port",
                     )
                 }
@@ -522,17 +592,105 @@ class AppController(
     fun writeGroupSwitch(addressText: String, value: Boolean) =
         writeGroupInternal(addressText, DptCodec.encodeBool(value), compact6Bit = true, summary = if (value) "ON" else "OFF")
 
+    fun writeGroupDimStep(addressText: String, increase: Boolean, stepCode: Int = 2) =
+        writeGroupInternal(
+            addressText,
+            DptCodec.encodeDimmingStep(increase, stepCode),
+            compact6Bit = true,
+            summary = if (stepCode == 0) "DIM STOP" else if (increase) "DIM UP" else "DIM DOWN",
+        )
+
     fun writeGroupPercent(addressText: String, percent: Double) =
         writeGroupInternal(addressText, DptCodec.encodePercent(percent), compact6Bit = false, summary = "${"%.0f".format(percent)} %")
 
     fun writeGroupFloat16(addressText: String, value: Double) =
         writeGroupInternal(addressText, DptCodec.encodeFloat16(value), compact6Bit = false, summary = "%.2f".format(value))
 
+    fun writeGroupInt32(addressText: String, value: Int) =
+        writeGroupInternal(addressText, DptCodec.encodeInt32(value), compact6Bit = false, summary = value.toString())
+
+    fun writeGroupString14(addressText: String, text: String) =
+        writeGroupInternal(addressText, DptCodec.encodeString14(text), compact6Bit = false, summary = "\"${text.take(14)}\"")
+
     fun writeGroupScene(addressText: String, scene1Based: Int) =
         writeGroupInternal(addressText, DptCodec.encodeScene(scene1Based.coerceIn(1, 64)), compact6Bit = false, summary = "Scene $scene1Based")
 
     fun writeGroupHvac(addressText: String, mode: HvacMode) =
         writeGroupInternal(addressText, DptCodec.encodeHvacMode(mode), compact6Bit = false, summary = mode.label)
+
+    fun replayTelegram(telegram: BusTelegram) {
+        val dstGroup = telegram.destinationGroup ?: run {
+            setStatus("Only Group Address telegrams can be replayed directly")
+            return
+        }
+        when (telegram.apci) {
+            ApciType.GROUP_READ -> readGroupAddress(dstGroup.toString())
+            else -> {
+                val compact = telegram.payload.size == 1 && (telegram.payload[0].toInt() and 0xFF) <= 0x3F
+                writeGroupInternal(dstGroup.toString(), telegram.payload, compact6Bit = compact, summary = "Replayed 0x${HexBytes.toHex(telegram.payload)}")
+            }
+        }
+    }
+
+    fun startWalkTestBlink(addressText: String, intervalMs: Long = 1_800L) {
+        val ga = GroupAddress.parseOrNull(addressText) ?: run {
+            setStatus("Invalid Group Address for Walk-Test: '$addressText'")
+            return
+        }
+        walkTestJob?.cancel()
+        walkTestJob = scope.launch {
+            val dpt = DptCodec.resolveMainDpt(_uiState.value.project?.findGroupAddress(ga)?.dpt)
+            _uiState.update {
+                it.copy(
+                    walkTestActive = true,
+                    walkTestGroupAddress = ga,
+                    walkTestStepCount = 0,
+                    statusMessage = "Walk-Test Blinker ACTIVE on $ga — toggling circuit every ${intervalMs}ms",
+                )
+            }
+            var toggle = true
+            var count = 0
+            try {
+                while (true) {
+                    if (_uiState.value.connectionState !is ConnectionState.Connected) {
+                        activeClient = simulatedClient
+                        _uiState.value.project?.let { simulatedClient.syncWithProject(it) }
+                        simulatedClient.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = true))
+                    }
+                    when (dpt) {
+                        MainDpt.DPT_5_PERCENT, MainDpt.DPT_5_UNSIGNED -> {
+                            activeClient.sendGroupWrite(ga, DptCodec.encodePercent(if (toggle) 100.0 else 10.0), compact6Bit = false)
+                        }
+                        else -> {
+                            activeClient.sendGroupWrite(ga, DptCodec.encodeBool(toggle), compact6Bit = true)
+                        }
+                    }
+                    count++
+                    toggle = !toggle
+                    _uiState.update { it.copy(walkTestStepCount = count) }
+                    delay(intervalMs.coerceAtLeast(600L))
+                }
+            } catch (_: CancellationException) {
+                // Stopped cleanly
+            } catch (e: Exception) {
+                setStatus("Walk-Test stopped: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(walkTestActive = false, walkTestGroupAddress = null) }
+            }
+        }
+    }
+
+    fun stopWalkTestBlink() {
+        walkTestJob?.cancel()
+        walkTestJob = null
+        _uiState.update {
+            it.copy(
+                walkTestActive = false,
+                walkTestGroupAddress = null,
+                statusMessage = "Walk-Test Blinker stopped",
+            )
+        }
+    }
 
     fun writeGroupRawHex(addressText: String, hexPayload: String, compact6Bit: Boolean) {
         val bytes = runCatching { HexBytes.fromHex(hexPayload) }.getOrElse {
@@ -568,6 +726,7 @@ class AppController(
                 val res = activeClient.pingDevice(ia)
                 _uiState.update { st ->
                     st.copy(
+                        deviceStatuses = st.deviceStatuses + (ia to res),
                         pingResults = (listOf(res) + st.pingResults).take(50),
                         statusMessage = if (res.reachable) {
                             "Device $ia is ONLINE (Mask ${res.maskVersionHex}, ${res.latencyMs} ms)"
@@ -627,7 +786,10 @@ class AppController(
                     delayBetweenMs = 60L,
                     onProgress = { entry ->
                         _uiState.update { st ->
-                            st.copy(lineAuditInProgressEntries = st.lineAuditInProgressEntries + entry)
+                            st.copy(
+                                deviceStatuses = st.deviceStatuses + (entry.expectedDevice.address to entry.pingResult),
+                                lineAuditInProgressEntries = st.lineAuditInProgressEntries + entry,
+                            )
                         }
                     },
                 )
@@ -667,6 +829,7 @@ class AppController(
                     idx++
                     _uiState.update { st ->
                         st.copy(
+                            deviceStatuses = if (res.reachable) st.deviceStatuses + (res.address to res) else st.deviceStatuses,
                             subnetScanResults = if (res.reachable) st.subnetScanResults + res else st.subnetScanResults,
                             subnetScanProgressText = "Scanned ${res.address} ($idx/${targets.size})",
                         )
@@ -718,6 +881,133 @@ class AppController(
     fun toggleSimulatedProgrammingLed(address: IndividualAddress, active: Boolean) {
         simulatedClient.setProgrammingMode(address, active)
         setStatus("Simulator: Set Programming LED on $address ${if (active) "ON" else "OFF"}")
+    }
+
+    fun restartRemoteDevice(addressText: String) {
+        val ia = IndividualAddress.parseOrNull(addressText) ?: run {
+            setStatus("Invalid Individual Address: '$addressText'")
+            return
+        }
+        scope.launch {
+            try {
+                val ok = activeClient.restartDevice(ia)
+                setStatus(if (ok) "Sent KNX A_Restart to $ia (device rebooting)" else "Device $ia did not accept A_Restart")
+            } catch (e: Exception) {
+                setStatus("Restart failed: ${e.message}")
+            }
+        }
+    }
+
+    fun commissionProgrammingDevice(newAddressText: String) {
+        val newIa = IndividualAddress.parseOrNull(newAddressText) ?: run {
+            setStatus("Invalid target Individual Address: '$newAddressText'")
+            return
+        }
+        scope.launch {
+            try {
+                val res = activeClient.writeProgrammingAddress(newIa)
+                val updatedLeds = runCatching { activeClient.findProgrammingModeDevices() }.getOrDefault(emptyList())
+                _uiState.update {
+                    it.copy(
+                        programmingModeDevices = updatedLeds,
+                        statusMessage = res.message,
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("Address commissioning failed: ${e.message}")
+            }
+        }
+    }
+
+    fun runFullSiteCheck() {
+        if (_uiState.value.isRunningFullSiteCheck) return
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isRunningFullSiteCheck = true,
+                    siteCheckProgressText = "Preparing bus connection...",
+                    statusMessage = "Running Full Site Health Check...",
+                )
+            }
+            try {
+                if (_uiState.value.connectionState !is ConnectionState.Connected) {
+                    activeClient = simulatedClient
+                    _uiState.value.project?.let { simulatedClient.syncWithProject(it) }
+                    simulatedClient.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = true))
+                }
+                val proj = _uiState.value.project
+                val statuses = _uiState.value.deviceStatuses.toMutableMap()
+
+                for (line in proj?.allLines.orEmpty()) {
+                    _uiState.update { it.copy(siteCheckProgressText = "Auditing Line ${line.id} (${line.name})...") }
+                    val rep = activeClient.auditLine(
+                        line = line,
+                        delayBetweenMs = 25L,
+                        timeoutPerDeviceMs = 800L,
+                        onProgress = { entry ->
+                            statuses[entry.expectedDevice.address] = entry.pingResult
+                            _uiState.update { st -> st.copy(deviceStatuses = statuses.toMap()) }
+                        },
+                    )
+                    _uiState.update { it.copy(lineAuditReport = rep) }
+                }
+
+                val gas = proj?.groupAddresses?.keys?.toList().orEmpty()
+                var responded = 0
+                for ((idx, ga) in gas.withIndex()) {
+                    _uiState.update { it.copy(siteCheckProgressText = "Polling Group Addresses (${idx + 1}/${gas.size})...") }
+                    val res = activeClient.sendGroupRead(ga, timeoutMs = 900L)
+                    if (res.responded && res.payload != null) {
+                        responded++
+                        val dpt = proj?.findGroupAddress(ga)?.dpt
+                        val decoded = DptCodec.decode(dpt, res.payload!!)
+                        _uiState.update { st ->
+                            st.copy(groupLiveValues = st.groupLiveValues + (ga to GroupValueEntry(decoded, res.latencyMs)))
+                        }
+                    }
+                    delay(40L)
+                }
+
+                _uiState.update { it.copy(siteCheckProgressText = "Checking active Programming-Mode LEDs...") }
+                val activeLeds = activeClient.findProgrammingModeDevices()
+                val report = BusHealthAnalyzer.buildSiteCheckReport(
+                    project = proj,
+                    deviceStatuses = statuses,
+                    polledTotal = gas.size,
+                    polledResponded = responded,
+                    activeProgLeds = activeLeds,
+                    telegrams = _uiState.value.telegrams,
+                )
+                _uiState.update {
+                    it.copy(
+                        programmingModeDevices = activeLeds,
+                        siteCheckReport = report,
+                        siteCheckProgressText = "",
+                        statusMessage = "Full Site Check complete — Readiness Score: ${report.readinessScorePercent}% (${report.onlineDevices}/${report.totalDevicesExpected} online)",
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("Full Site Check failed: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(isRunningFullSiteCheck = false, siteCheckProgressText = "") }
+            }
+        }
+    }
+
+    fun exportHtmlCommissioningReport(targetFile: File) {
+        val snap = _uiState.value
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                HtmlReportExporter.exportCommissioningHtml(
+                    targetFile = targetFile,
+                    project = snap.project,
+                    siteCheck = snap.siteCheckReport,
+                    deviceStatuses = snap.deviceStatuses,
+                    groupLiveValues = snap.groupLiveValues,
+                )
+            }
+            setStatus("Exported HTML Commissioning Report to ${targetFile.absolutePath}")
+        }
     }
 
     fun exportMonitorCsv(targetFile: File) {

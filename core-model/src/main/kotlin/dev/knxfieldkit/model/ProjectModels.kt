@@ -27,4 +27,19 @@ data class KnxProject(val projectId: String, val name: String, val etsVersion: S
     fun findGroupAddress(address: GroupAddress): GroupAddressInfo? = groupAddresses[address]
 
     fun findLine(area: Int, line: Int): TopologyLine? = areas.firstOrNull { it.area == area }?.lines?.firstOrNull { it.line == line }
+
+    fun findDeviceLocationPath(address: IndividualAddress): String? {
+        fun search(loc: BuildingLocation, prefix: List<String>): String? {
+            val current = prefix + loc.name
+            if (address in loc.deviceAddresses) return current.joinToString(" › ")
+            for (child in loc.children) {
+                search(child, current)?.let { return it }
+            }
+            return null
+        }
+        for (root in locations) {
+            search(root, emptyList())?.let { return it }
+        }
+        return null
+    }
 }

@@ -83,31 +83,41 @@ class AppControllerTest {
     @Test
     fun allFourComposeTabsAndDialogsRenderCleanly() = runBlocking {
         val controller = AppController()
+        val tmpReportDir = Files.createTempDirectory("html-rep-").toFile()
         val screenshotDir = System.getProperty("knx.screenshot.dir")?.let(::File)?.apply { mkdirs() }
-        val scene = ImageComposeScene(width = 1380, height = 860) {
+        val scene = ImageComposeScene(width = 1420, height = 880) {
             KnxFieldKitTheme {
                 KnxFieldKitApp(controller)
             }
         }
         try {
-            controller.connectSimulator()
+            controller.runFullSiteCheck()
             var attempts = 0
-            while (controller.uiState.value.connectionState !is ConnectionState.Connected && attempts < 40) {
+            while (controller.uiState.value.siteCheckReport == null && attempts < 140) {
                 delay(50L)
                 attempts++
             }
+            val siteReport = controller.uiState.value.siteCheckReport
+            assertNotNull(siteReport, "Expected One-Click Full Site Check report to complete")
+            assertEquals(5, siteReport.onlineDevices)
+            assertEquals(1, siteReport.unreachableDevices.size)
 
-            // Trigger live traffic, group read/write, ping, and line audit so every screen renders populated state
-            controller.readGroupAddress("1/1/1")
-            controller.writeGroupSwitch("1/1/1", true)
-            controller.pingIndividualDevice("1.1.10")
-            controller.toggleSimulatedDeviceOnline(IndividualAddress(1, 1, 20), false)
-            controller.runProjectLineAudit(1, 1)
+            val htmlFile = File(tmpReportDir, "commissioning.html")
+            controller.exportHtmlCommissioningReport(htmlFile)
             attempts = 0
-            while (controller.uiState.value.lineAuditReport == null && attempts < 80) {
+            while (!htmlFile.isFile && attempts < 40) {
                 delay(50L)
                 attempts++
             }
+            assertTrue(htmlFile.isFile)
+            assertTrue(htmlFile.readText().contains("Site Readiness Score"))
+
+            // Select a telegram in BusMonitor so the right-hand Telegram Inspector & Replay drawer renders too
+            val firstTelId = controller.uiState.value.telegrams.firstOrNull()?.telegram?.id
+            controller.selectMonitorTelegram(firstTelId)
+            controller.pingIndividualDevice("1.1.10")
+            controller.inspectDeviceDiagnostics("1.1.10")
+            delay(80L)
 
             var clockNs = 1_000_000_000L
             for (tab in AppTab.entries) {
@@ -117,23 +127,32 @@ class AppControllerTest {
                 clockNs += 350_000_000L
                 val image = scene.render(clockNs)
                 clockNs += 50_000_000L
-                assertEquals(1380, image.width)
-                assertEquals(860, image.height)
+                assertEquals(1420, image.width)
+                assertEquals(880, image.height)
                 if (screenshotDir != null) {
                     val pngBytes = image.encodeToData(EncodedImageFormat.PNG)?.bytes
                     assertNotNull(pngBytes)
-                    File(screenshotDir, "knx-field-kit-${tab.name.lowercase()}.png").writeBytes(pngBytes)
+                    File(screenshotDir, "knx-field-kit-v2-${tab.name.lowercase()}.png").writeBytes(pngBytes)
                 }
             }
+
+            // Also render Project Explorer in Group Address Cross-Reference Inspector mode + Rooms view
+            controller.selectTab(AppTab.PROJECT)
+            controller.setExplorerLocationView(true)
+            controller.inspectGroupInExplorer(dev.knxfieldkit.model.GroupAddress.parse("1/1/1"))
+            delay(40L)
+            val gaInspImg = scene.render(clockNs + 300_000_000L)
+            assertEquals(1420, gaInspImg.width)
 
             // Render Gateway Connect Dialog as well
             controller.toggleConnectDialog(true)
             delay(40L)
-            val dlgImg = scene.render(System.nanoTime())
-            assertEquals(1380, dlgImg.width)
+            val dlgImg = scene.render(clockNs + 600_000_000L)
+            assertEquals(1420, dlgImg.width)
         } finally {
             scene.close()
             controller.close()
+            tmpReportDir.deleteRecursively()
         }
     }
 }

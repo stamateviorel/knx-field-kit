@@ -13,15 +13,68 @@ import androidx.compose.ui.unit.dp
 import dev.knxfieldkit.model.*
 
 @Composable
-fun FieldDiagnosticsScreen(state: AppUiState, controller: AppController) {
+fun FieldDiagnosticsScreen(
+    state: AppUiState,
+    controller: AppController,
+    onExportHtmlReport: () -> Unit = {},
+) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Top One-Click Full Site Commissioning Wizard Card
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("One-Click Full Site Health Check & Commissioning Report", style = MaterialTheme.typography.titleMedium)
+                        val rep = state.siteCheckReport
+                        if (state.isRunningFullSiteCheck) {
+                            Text(state.siteCheckProgressText, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                        } else if (rep != null) {
+                            Text(
+                                text = "Score: ${rep.readinessScorePercent}% • Online: ${rep.onlineDevices}/${rep.totalDevicesExpected} • Offline: ${rep.unreachableDevices.size} • Polled GAs: ${rep.polledGroupsResponded}/${rep.polledGroupsTotal} • Prog-LEDs: ${rep.activeProgrammingLeds.size}",
+                                color = if (rep.readinessScorePercent >= 85) Color(0xFF2ECC71) else Color(0xFFF59E0B),
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                text = rep.findings.joinToString("  |  "),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else {
+                            Text(
+                                text = "Audits every expected device, polls all group addresses, checks stuck Programming LEDs, and builds a printable HTML handover report.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = controller::runFullSiteCheck,
+                            enabled = !state.isRunningFullSiteCheck,
+                        ) {
+                            Text(if (state.isRunningFullSiteCheck) "Checking Bus..." else "Run Full Site Check")
+                        }
+                        OutlinedButton(onClick = onExportHtmlReport) {
+                            Text("Export HTML Report")
+                        }
+                    }
+                }
+                if (state.isRunningFullSiteCheck) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+
         Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // 1. Individual Address Ping & Device Inspector
+            // 1. Individual Address Ping, BCU Inspector & Remote Restart
             Card(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("1. Device Ping (DD0) & BCU Inspector", style = MaterialTheme.typography.titleMedium)
+                    Text("1. Device Ping (DD0), BCU Inspector & Remote Restart", style = MaterialTheme.typography.titleMedium)
                     var targetIa by remember { mutableStateOf("1.1.10") }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
                             value = targetIa,
                             onValueChange = { targetIa = it },
@@ -37,6 +90,9 @@ fun FieldDiagnosticsScreen(state: AppUiState, controller: AppController) {
                             enabled = !state.isReadingDiagnostics,
                         ) {
                             Text("Inspect")
+                        }
+                        OutlinedButton(onClick = { controller.restartRemoteDevice(targetIa) }) {
+                            Text("Restart")
                         }
                     }
                     if (state.isSimulatorActive) {
@@ -90,31 +146,39 @@ fun FieldDiagnosticsScreen(state: AppUiState, controller: AppController) {
                     Text("2. Project-vs-Bus Line Audit", style = MaterialTheme.typography.titleMedium)
                     val lines = state.project?.allLines.orEmpty()
                     var selectedLineId by remember(state.project) { mutableStateOf(lines.firstOrNull()?.id ?: "1.1") }
+                    var faultsOnly by remember { mutableStateOf(false) }
                     val selectedLine = lines.firstOrNull { it.id == selectedLineId } ?: lines.firstOrNull()
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        lines.take(4).forEach { ln ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        lines.take(3).forEach { ln ->
                             FilterChip(
                                 selected = selectedLine?.id == ln.id,
                                 onClick = { selectedLineId = ln.id },
                                 label = { Text("Line ${ln.id} (${ln.devices.size})") },
                             )
                         }
+                        FilterChip(
+                            selected = faultsOnly,
+                            onClick = { faultsOnly = !faultsOnly },
+                            label = { Text("Faults Only") },
+                        )
                         Spacer(Modifier.weight(1f))
                         Button(
                             onClick = { selectedLine?.let { controller.runProjectLineAudit(it.area, it.line) } },
                             enabled = selectedLine != null && !state.isAuditingLine,
                         ) {
-                            Text(if (state.isAuditingLine) "Auditing..." else "Run Line Audit")
+                            Text(if (state.isAuditingLine) "Auditing..." else "Audit Line")
                         }
                     }
                     state.lineAuditReport?.let { rep ->
                         Text(
-                            text = "Line ${rep.lineId} Summary — Online: ${rep.onlineCount} | Unreachable: ${rep.unreachableCount} | Mask Mismatch: ${rep.mismatchCount}",
+                            text = "Line ${rep.lineId} — Online: ${rep.onlineCount} | Unreachable: ${rep.unreachableCount} | Mask Mismatch: ${rep.mismatchCount}",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    val entries = state.lineAuditReport?.entries ?: state.lineAuditInProgressEntries
+                    val entries = (state.lineAuditReport?.entries ?: state.lineAuditInProgressEntries).filter {
+                        !faultsOnly || it.status != AuditStatus.ONLINE
+                    }
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(entries) { entry ->
                             val color = when (entry.status) {
@@ -122,8 +186,9 @@ fun FieldDiagnosticsScreen(state: AppUiState, controller: AppController) {
                                 AuditStatus.ONLINE_MASK_MISMATCH -> Color(0xFFF59E0B)
                                 AuditStatus.UNREACHABLE -> Color(0xFFEF4444)
                             }
+                            val loc = state.project?.findDeviceLocationPath(entry.expectedDevice.address)
                             Text(
-                                text = "[${entry.status}] ${entry.expectedDevice.address} — ${entry.expectedDevice.name} (Mask: ${entry.pingResult.maskVersionHex ?: "none"}, ${entry.pingResult.latencyMs} ms)",
+                                text = "[${entry.status}] ${entry.expectedDevice.address} — ${entry.expectedDevice.name}${loc?.let { " ($it)" }.orEmpty()} [${entry.pingResult.maskVersionHex ?: "no reply"}, ${entry.pingResult.latencyMs} ms]",
                                 color = color,
                                 fontFamily = FontFamily.Monospace,
                                 style = MaterialTheme.typography.bodySmall,
@@ -144,10 +209,10 @@ fun FieldDiagnosticsScreen(state: AppUiState, controller: AppController) {
                     var fromText by remember { mutableStateOf("0") }
                     var toText by remember { mutableStateOf("30") }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(value = areaText, onValueChange = { areaText = it }, label = { Text("Area") }, singleLine = true, modifier = Modifier.width(72.dp))
-                        OutlinedTextField(value = lineText, onValueChange = { lineText = it }, label = { Text("Line") }, singleLine = true, modifier = Modifier.width(72.dp))
-                        OutlinedTextField(value = fromText, onValueChange = { fromText = it }, label = { Text("Start") }, singleLine = true, modifier = Modifier.width(82.dp))
-                        OutlinedTextField(value = toText, onValueChange = { toText = it }, label = { Text("End") }, singleLine = true, modifier = Modifier.width(82.dp))
+                        OutlinedTextField(value = areaText, onValueChange = { areaText = it }, label = { Text("Area") }, singleLine = true, modifier = Modifier.width(68.dp))
+                        OutlinedTextField(value = lineText, onValueChange = { lineText = it }, label = { Text("Line") }, singleLine = true, modifier = Modifier.width(68.dp))
+                        OutlinedTextField(value = fromText, onValueChange = { fromText = it }, label = { Text("Start") }, singleLine = true, modifier = Modifier.width(78.dp))
+                        OutlinedTextField(value = toText, onValueChange = { toText = it }, label = { Text("End") }, singleLine = true, modifier = Modifier.width(78.dp))
                         Button(
                             onClick = {
                                 controller.startSubnetScan(
@@ -184,16 +249,16 @@ fun FieldDiagnosticsScreen(state: AppUiState, controller: AppController) {
                 }
             }
 
-            // 4. Programming Mode LED Finder
+            // 4. Programming Mode LED Finder & Safe Address Commissioning
             Card(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("4. Programming-Mode LED Finder (IndividualAddress_Read)", style = MaterialTheme.typography.titleMedium)
+                    Text("4. Programming-LED Finder & Safe Address Writer", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = controller::scanProgrammingModeLeds,
                             enabled = !state.isCheckingProgrammingMode,
                         ) {
-                            Text(if (state.isCheckingProgrammingMode) "Scanning..." else "Scan Active Programming LEDs")
+                            Text(if (state.isCheckingProgrammingMode) "Scanning..." else "Scan Active Prog-LEDs")
                         }
                         if (state.isSimulatorActive) {
                             val testIa = IndividualAddress(1, 1, 15)
@@ -204,15 +269,28 @@ fun FieldDiagnosticsScreen(state: AppUiState, controller: AppController) {
                             }
                         }
                     }
+                    var newAddressInput by remember { mutableStateOf("1.1.50") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newAddressInput,
+                            onValueChange = { newAddressInput = it },
+                            label = { Text("Assign New Address (requires 1 active LED)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedButton(onClick = { controller.commissionProgrammingDevice(newAddressInput) }) {
+                            Text("Write Address")
+                        }
+                    }
                     if (state.programmingModeDevices.isEmpty()) {
                         Text(
-                            text = "Click 'Scan Active Programming LEDs' to detect any KNX device on the bus with its physical programming button pressed.",
+                            text = "Press the physical Programming Button on a KNX device, click 'Scan Active Prog-LEDs', or assign its Individual Address safely.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             items(state.programmingModeDevices) { addr ->
-                                val devName = state.project?.findDevice(addr)?.name ?: "Unmapped Device"
+                                val devName = state.project?.findDevice(addr)?.name ?: "Unmapped / New Replacement Device"
                                 Text(
                                     text = "● ACTIVE PROG-LED: $addr — $devName",
                                     color = Color(0xFFF59E0B),

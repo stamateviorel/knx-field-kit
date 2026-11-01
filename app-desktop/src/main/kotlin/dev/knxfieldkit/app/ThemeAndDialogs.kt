@@ -82,9 +82,9 @@ fun PasswordUnlockDialog(prompt: PasswordPromptState, onSubmit: (String) -> Unit
 
 @Composable
 fun GatewayConnectDialog(state: AppUiState, controller: AppController) {
-    var host by remember { mutableStateOf("192.168.1.10") }
-    var portText by remember { mutableStateOf("3671") }
-    var useNat by remember { mutableStateOf(false) }
+    var host by remember(state.savedGatewayHost) { mutableStateOf(state.savedGatewayHost) }
+    var portText by remember(state.savedGatewayPort) { mutableStateOf(state.savedGatewayPort.toString()) }
+    var useNat by remember(state.savedGatewayUseNat) { mutableStateOf(state.savedGatewayUseNat) }
     var secureUserPwd by remember { mutableStateOf("") }
     var secureAuthCode by remember { mutableStateOf("") }
     AlertDialog(

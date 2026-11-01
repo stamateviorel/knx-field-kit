@@ -10,6 +10,7 @@ import dev.knxfieldkit.model.GatewayEndpoint
 import dev.knxfieldkit.model.GroupAddress
 import dev.knxfieldkit.model.GroupReadResult
 import dev.knxfieldkit.model.IndividualAddress
+import dev.knxfieldkit.model.IndividualAddressWriteResult
 import dev.knxfieldkit.model.LineAuditEntry
 import dev.knxfieldkit.model.LineAuditReport
 import dev.knxfieldkit.model.TopologyLine
@@ -42,6 +43,10 @@ interface KnxBusClient : AutoCloseable {
     suspend fun findProgrammingModeDevices(timeoutMs: Long = 2_000L): List<IndividualAddress>
 
     suspend fun readDeviceDiagnostics(address: IndividualAddress, timeoutMs: Long = 2_500L): DeviceDiagnosticDetails
+
+    suspend fun restartDevice(address: IndividualAddress, timeoutMs: Long = 2_000L): Boolean
+
+    suspend fun writeProgrammingAddress(newAddress: IndividualAddress, timeoutMs: Long = 3_000L): IndividualAddressWriteResult
 
     /**
      * Rate-limited sequential scan across a list of [IndividualAddress] targets (safe for 9600 bps TP1 lines).

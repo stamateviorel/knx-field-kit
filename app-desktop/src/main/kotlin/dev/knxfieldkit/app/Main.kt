@@ -13,6 +13,11 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.knxfieldkit.model.ConnectionState
 import java.awt.FileDialog
 import java.awt.Frame
+import java.awt.datatransfer.DataFlavor
+import java.awt.dnd.DnDConstants
+import java.awt.dnd.DropTarget
+import java.awt.dnd.DropTargetAdapter
+import java.awt.dnd.DropTargetDropEvent
 import java.io.File
 
 fun pickOpenFile(title: String): File? {
@@ -53,11 +58,20 @@ fun KnxFieldKitApp(controller: AppController) {
                     Column {
                         Text("KNX Field Kit", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "ETS4/5/6 .knxproj Inspector • Live Traffic Decoder • Field Commissioning Suite",
+                            "Drop any .knxproj / .knxkeys onto window • ETS4/5/6 Unlocker • Live Bus & Commissioning",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
+                    OutlinedButton(
+                        onClick = {
+                            controller.selectTab(AppTab.DIAGNOSTICS)
+                            controller.runFullSiteCheck()
+                        },
+                        enabled = !state.isRunningFullSiteCheck,
+                    ) {
+                        Text(if (state.isRunningFullSiteCheck) "Checking Site..." else "1-Click Site Check")
+                    }
                     Text(
                         text = connectionStatus,
                         color = if (state.connectionState is ConnectionState.Connected) {
@@ -75,6 +89,25 @@ fun KnxFieldKitApp(controller: AppController) {
                     }
                     OutlinedButton(onClick = { controller.toggleConnectDialog(true) }) {
                         Text("Gateways / IP Connect...")
+                    }
+                }
+            }
+
+            if (state.walkTestActive) {
+                Surface(color = MaterialTheme.colorScheme.tertiary) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "WALK-TEST CIRCUIT BLINKER ACTIVE on ${state.walkTestGroupAddress} — Toggle #${state.walkTestStepCount} (walk to room to locate circuit)",
+                            color = MaterialTheme.colorScheme.background,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Button(onClick = controller::stopWalkTestBlink) {
+                            Text("Stop Walk-Test")
+                        }
                     }
                 }
             }
@@ -110,7 +143,14 @@ fun KnxFieldKitApp(controller: AppController) {
                             onExportCsv = { pickSaveFile("Export Bus Traffic CSV", "knx-traffic.csv")?.let(controller::exportMonitorCsv) },
                         )
                         AppTab.SENDER -> TelegramSenderScreen(state = state, controller = controller)
-                        AppTab.DIAGNOSTICS -> FieldDiagnosticsScreen(state = state, controller = controller)
+                        AppTab.DIAGNOSTICS -> FieldDiagnosticsScreen(
+                            state = state,
+                            controller = controller,
+                            onExportHtmlReport = {
+                                pickSaveFile("Export HTML Commissioning Report", "knx-commissioning-report.html")
+                                    ?.let(controller::exportHtmlCommissioningReport)
+                            },
+                        )
                     }
                 }
             }
@@ -159,8 +199,31 @@ fun main(args: Array<String>) = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "KNX Field Kit — Project & Bus Diagnostics",
-        state = rememberWindowState(width = 1380.dp, height = 860.dp),
+        state = rememberWindowState(width = 1420.dp, height = 880.dp),
     ) {
+        DisposableEffect(window) {
+            val dropTarget = DropTarget(window, object : DropTargetAdapter() {
+                override fun drop(dtde: DropTargetDropEvent) {
+                    try {
+                        dtde.acceptDrop(DnDConstants.ACTION_COPY)
+                        val files = dtde.transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>
+                        val knxFile = files?.filterIsInstance<File>()?.firstOrNull {
+                            it.extension.equals("knxproj", ignoreCase = true) ||
+                                it.extension.equals("knxkeys", ignoreCase = true)
+                        }
+                        if (knxFile != null) {
+                            controller.openProjectOrKeyringFile(knxFile)
+                            dtde.dropComplete(true)
+                        } else {
+                            dtde.dropComplete(false)
+                        }
+                    } catch (_: Exception) {
+                        dtde.dropComplete(false)
+                    }
+                }
+            })
+            onDispose { dropTarget.isActive = false }
+        }
         KnxFieldKitTheme {
             KnxFieldKitApp(controller)
         }

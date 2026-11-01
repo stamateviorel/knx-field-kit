@@ -94,7 +94,39 @@ class CoreModelTest {
 
         val encodedHvacMode = DptCodec.encodeHvacMode(HvacMode.COMFORT)
         assertEquals("Comfort", DptCodec.decode("20.102", encodedHvacMode))
+
+        val encodedDimUp = DptCodec.encodeDimmingStep(increase = true, stepCode = 3)
+        assertEquals("UP 25.0%", DptCodec.decode("3.007", encodedDimUp))
+        assertEquals("STOP", DptCodec.decode("3.007", DptCodec.encodeDimmingStep(increase = false, stepCode = 0)))
     }
+
+    @Test
+    fun testBusHealthAnalyzerDetectsUnansweredReadsAndGhostTraffic() {
+        val now = 1_700_000_010_000L
+        val gaKnown = GroupAddress.parse("1/1/1")
+        val gaDead = GroupAddress.parse("1/1/9")
+        val gaGhost = GroupAddress.parse("9/7/99")
+        val project = KnxProject(
+            projectId = "P-1",
+            name = "Health Test",
+            groupAddresses = mapOf(
+                gaKnown to GroupAddressInfo(gaKnown, "Light", dpt = "1.001"),
+                gaDead to GroupAddressInfo(gaDead, "Broken Sensor", dpt = "9.001"),
+            ),
+        )
+        val rows = listOf(
+            EnrichedTelegram.enrich(BusTelegram(1, now - 3000L, IndividualAddress(1, 1, 20), dstGroup(gaDead), null, ApciType.GROUP_READ), project),
+            EnrichedTelegram.enrich(BusTelegram(2, now - 2000L, IndividualAddress(1, 1, 20), dstGroup(gaKnown), null, ApciType.GROUP_READ), project),
+            EnrichedTelegram.enrich(BusTelegram(3, now - 1950L, IndividualAddress(1, 1, 10), dstGroup(gaKnown), null, ApciType.GROUP_RESPONSE, byteArrayOf(1)), project),
+            EnrichedTelegram.enrich(BusTelegram(4, now - 500L, IndividualAddress(1, 1, 25), dstGroup(gaGhost), null, ApciType.GROUP_WRITE, byteArrayOf(1)), project),
+        )
+        val stats = BusHealthAnalyzer.analyze(rows, nowEpochMs = now, windowMs = 10_000L)
+        assertEquals(1, stats.ghostGroupCount)
+        assertEquals(listOf(gaDead), stats.unansweredReadAddresses)
+        assertTrue(stats.telegramsPerSecond > 0.0)
+    }
+
+    private fun dstGroup(ga: GroupAddress): GroupAddress = ga
 
     @Test
     fun testEnrichedTelegram() {

@@ -24,10 +24,12 @@ object DemoKnxProjectFactory {
         val gaLightStatus = GroupAddress.ofThreeLevel(1, 1, 2)
         val gaKitchenSwitch = GroupAddress.ofThreeLevel(1, 2, 1)
         val gaKitchenDim = GroupAddress.ofThreeLevel(1, 2, 2)
+        val gaKitchenStep = GroupAddress.ofThreeLevel(1, 2, 3)
         val gaLivingTemp = GroupAddress.ofThreeLevel(1, 3, 1)
         val gaOutdoorTemp = GroupAddress.ofThreeLevel(1, 3, 2)
         val gaLivingScene = GroupAddress.ofThreeLevel(1, 4, 1)
         val gaLivingHvac = GroupAddress.ofThreeLevel(1, 5, 1)
+        val gaPanelText = GroupAddress.ofThreeLevel(1, 6, 1)
 
         val devices = listOf(
             ProjectDevice(
@@ -57,7 +59,7 @@ object DemoKnxProjectFactory {
                 orderNumber = "AKD-0401.02",
                 hardwareSerial = "008300445566",
                 maskVersion = "07B0",
-                groupAddresses = listOf(gaKitchenSwitch, gaKitchenDim),
+                groupAddresses = listOf(gaKitchenSwitch, gaKitchenDim, gaKitchenStep),
             ),
             ProjectDevice(
                 address = IndividualAddress(1, 1, 20),
@@ -67,7 +69,7 @@ object DemoKnxProjectFactory {
                 orderNumber = "BE-GT20W.01",
                 hardwareSerial = "008300778899",
                 maskVersion = "07B0",
-                groupAddresses = listOf(gaLightSwitch, gaLivingTemp, gaLivingScene, gaLivingHvac),
+                groupAddresses = listOf(gaLightSwitch, gaLightStatus, gaLivingTemp, gaLivingScene, gaLivingHvac, gaPanelText),
             ),
             ProjectDevice(
                 address = IndividualAddress(1, 1, 25),
@@ -91,14 +93,91 @@ object DemoKnxProjectFactory {
         )
 
         val groupAddresses = listOf(
-            GroupAddressInfo(gaLightSwitch, "Living Room Ceiling Light Switch", dpt = "1.001"),
-            GroupAddressInfo(gaLightStatus, "Living Room Ceiling Light Status", dpt = "1.001"),
-            GroupAddressInfo(gaKitchenSwitch, "Kitchen Island Spots On/Off", dpt = "1.001"),
-            GroupAddressInfo(gaKitchenDim, "Kitchen Island Dimming Value", dpt = "5.001"),
-            GroupAddressInfo(gaLivingTemp, "Living Room Temperature", dpt = "9.001"),
-            GroupAddressInfo(gaOutdoorTemp, "Outdoor Temperature", dpt = "9.001"),
-            GroupAddressInfo(gaLivingScene, "Living Room Scene", dpt = "17.001"),
-            GroupAddressInfo(gaLivingHvac, "Living Room HVAC Mode", dpt = "20.102"),
+            GroupAddressInfo(
+                gaLightSwitch,
+                "Living Room Ceiling Light Switch",
+                description = "Main ceiling LED circuit relay A",
+                dpt = "1.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-10", "Channel A Switch", "On/Off Output", "1.001", IndividualAddress(1, 1, 10)),
+                    ComObjectLink("O-201", "Rocker 1 Left", "Toggle Ceiling Light", "1.001", IndividualAddress(1, 1, 20)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaLightStatus,
+                "Living Room Ceiling Light Status",
+                description = "Relay A feedback status",
+                dpt = "1.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-11", "Channel A Status", "State Feedback", "1.001", IndividualAddress(1, 1, 10)),
+                    ComObjectLink("O-202", "Rocker 1 LED", "Status Indicator", "1.001", IndividualAddress(1, 1, 20)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaKitchenSwitch,
+                "Kitchen Island Spots On/Off",
+                dpt = "1.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-30", "Dimmer Ch.1 Switch", "Switch On/Off", "1.001", IndividualAddress(1, 1, 15)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaKitchenDim,
+                "Kitchen Island Dimming Value",
+                dpt = "5.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-32", "Dimmer Ch.1 Absolute %", "Brightness Value", "5.001", IndividualAddress(1, 1, 15)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaKitchenStep,
+                "Kitchen Island Relative Dimming Step",
+                dpt = "3.007",
+                linkedObjects = listOf(
+                    ComObjectLink("O-31", "Dimmer Ch.1 Relative", "Brighter / Darker / Stop", "3.007", IndividualAddress(1, 1, 15)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaLivingTemp,
+                "Living Room Temperature",
+                dpt = "9.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-210", "Internal Temp Sensor", "Measured Room Temp", "9.001", IndividualAddress(1, 1, 20)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaOutdoorTemp,
+                "Outdoor Temperature",
+                dpt = "9.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-401", "Facade Temp Probe", "Outdoor Air Temp", "9.001", IndividualAddress(1, 1, 25)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaLivingScene,
+                "Living Room Scene",
+                dpt = "17.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-215", "Scene Recall", "1=Evening, 2=Cinema, 3=All Off", "17.001", IndividualAddress(1, 1, 20)),
+                    ComObjectLink("O-18", "Scene Input A", "Actuator Scene", "17.001", IndividualAddress(1, 1, 10)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaLivingHvac,
+                "Living Room HVAC Mode",
+                dpt = "20.102",
+                linkedObjects = listOf(
+                    ComObjectLink("O-220", "Room Operating Mode", "Comfort / Standby / Night", "20.102", IndividualAddress(1, 1, 20)),
+                ),
+            ),
+            GroupAddressInfo(
+                gaPanelText,
+                "Glass Panel Info Text (14-Char)",
+                dpt = "16.001",
+                linkedObjects = listOf(
+                    ComObjectLink("O-230", "Display Line 1 Text", "Status Message Display", "16.001", IndividualAddress(1, 1, 20)),
+                ),
+            ),
         ).associateBy { it.address }
 
         val locations = listOf(
@@ -106,11 +185,19 @@ object DemoKnxProjectFactory {
                 name = "Ground Floor",
                 type = "Floor",
                 children = listOf(
+                    BuildingLocation("Distribution Board", "Cabinet", listOf(IndividualAddress(1, 1, 0))),
                     BuildingLocation("Living Room", "Room", listOf(IndividualAddress(1, 1, 10), IndividualAddress(1, 1, 20))),
                     BuildingLocation("Kitchen", "Room", listOf(IndividualAddress(1, 1, 15))),
                     BuildingLocation("Garage", "Room", listOf(IndividualAddress(1, 1, 40))),
                 ),
-            )
+            ),
+            BuildingLocation(
+                name = "Exterior",
+                type = "Outdoor",
+                children = listOf(
+                    BuildingLocation("South Roof / Facade", "Zone", listOf(IndividualAddress(1, 1, 25))),
+                ),
+            ),
         )
 
         return KnxProject(
@@ -172,6 +259,7 @@ class SimulatedKnxBusClient(
         groupValues[GroupAddress.ofThreeLevel(1, 3, 2)] = IndividualAddress(1, 1, 25) to DptCodec.encodeFloat16(11.4)
         groupValues[GroupAddress.ofThreeLevel(1, 4, 1)] = IndividualAddress(1, 1, 20) to DptCodec.encodeScene(1)
         groupValues[GroupAddress.ofThreeLevel(1, 5, 1)] = IndividualAddress(1, 1, 20) to DptCodec.encodeHvacMode(HvacMode.COMFORT)
+        groupValues[GroupAddress.ofThreeLevel(1, 6, 1)] = IndividualAddress(1, 1, 20) to DptCodec.encodeString14("VILLA OK")
     }
 
     fun syncWithProject(
@@ -326,6 +414,21 @@ class SimulatedKnxBusClient(
                 delay(25L)
                 emitTelegram(IndividualAddress(1, 1, 10), dstGroup = statusGa, apci = ApciType.GROUP_WRITE, payload = copy)
             }
+        } else if (address == GroupAddress.ofThreeLevel(1, 2, 3) && copy.isNotEmpty()) {
+            val nibble = copy.last().toInt() and 0x0F
+            val step = nibble and 0x07
+            if (step > 0) {
+                val dimGa = GroupAddress.ofThreeLevel(1, 2, 2)
+                val currentPct = groupValues[dimGa]?.second?.let { runCatching { DptCodec.decodePercent(it) }.getOrDefault(50.0) } ?: 50.0
+                val delta = 100.0 / (1 shl (step - 1))
+                val nextPct = (if ((nibble and 0x08) != 0) currentPct + delta else currentPct - delta).coerceIn(0.0, 100.0)
+                val nextPayload = DptCodec.encodePercent(nextPct)
+                groupValues[dimGa] = IndividualAddress(1, 1, 15) to nextPayload
+                scope.launch {
+                    delay(25L)
+                    emitTelegram(IndividualAddress(1, 1, 15), dstGroup = dimGa, apci = ApciType.GROUP_WRITE, payload = nextPayload)
+                }
+            }
         }
     }
 
@@ -387,6 +490,51 @@ class SimulatedKnxBusClient(
                 notes = listOf("Device did not respond on TP1 line (check bus power / choke / TP connector)"),
             )
         }
+    }
+
+    override suspend fun restartDevice(address: IndividualAddress, timeoutMs: Long): Boolean {
+        ensureConnected()
+        val dev = virtualDevices[address]
+        delay(25L)
+        if (dev != null && dev.online) {
+            emitTelegram(localTunnelAddr, dstInd = address, apci = ApciType.OTHER, payload = byteArrayOf(0x03, 0x80.toByte()))
+            return true
+        }
+        return false
+    }
+
+    override suspend fun writeProgrammingAddress(
+        newAddress: IndividualAddress,
+        timeoutMs: Long,
+    ): IndividualAddressWriteResult {
+        ensureConnected()
+        val active = findProgrammingModeDevices(timeoutMs)
+        if (active.isEmpty()) {
+            return IndividualAddressWriteResult(
+                success = false,
+                newAddress = newAddress,
+                message = "Refused: No device currently has its Programming LED active.",
+            )
+        }
+        if (active.size > 1) {
+            return IndividualAddressWriteResult(
+                success = false,
+                newAddress = newAddress,
+                message = "Refused for safety: ${active.size} devices have Programming LEDs active (${active.joinToString()}). Leave only 1 LED active.",
+            )
+        }
+        val oldAddr = active.single()
+        val moved = virtualDevices.remove(oldAddr)
+        if (moved != null) {
+            moved.programmingMode = false
+            virtualDevices[newAddress] = moved
+        }
+        delay(25L)
+        return IndividualAddressWriteResult(
+            success = true,
+            newAddress = newAddress,
+            message = "Programmed $oldAddr -> $newAddress (Programming LED turned off)",
+        )
     }
 
     override fun close() {

@@ -11,6 +11,7 @@ import dev.knxfieldkit.model.GroupAddress
 import dev.knxfieldkit.model.GroupReadResult
 import dev.knxfieldkit.model.HexBytes
 import dev.knxfieldkit.model.IndividualAddress
+import dev.knxfieldkit.model.IndividualAddressWriteResult
 import dev.knxfieldkit.model.TelegramPriority
 import io.calimero.CloseEvent
 import io.calimero.DataUnitBuilder
@@ -378,6 +379,73 @@ class CalimeroKnxBusClient(
             }
         } finally {
             mgmt.detach()
+        }
+    }
+
+    override suspend fun restartDevice(address: IndividualAddress, timeoutMs: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            val link = requireConnectedLink()
+            val mgmt = ManagementClientImpl(link)
+            try {
+                mgmt.responseTimeout(Duration.ofMillis(timeoutMs.coerceAtLeast(500L)))
+                val dst = mgmt.createDestination(CalimeroIndividualAddress(address.raw), false)
+                try {
+                    mgmt.restart(dst)
+                    true
+                } finally {
+                    dst.destroy()
+                }
+            } catch (_: Exception) {
+                false
+            } finally {
+                mgmt.detach()
+            }
+        }
+
+    override suspend fun writeProgrammingAddress(
+        newAddress: IndividualAddress,
+        timeoutMs: Long,
+    ): IndividualAddressWriteResult = withContext(Dispatchers.IO) {
+        val activeLeds = findProgrammingModeDevices(timeoutMs)
+        if (activeLeds.isEmpty()) {
+            return@withContext IndividualAddressWriteResult(
+                success = false,
+                newAddress = newAddress,
+                message = "Refused: No device on the bus currently has its Programming LED active.",
+            )
+        }
+        if (activeLeds.size > 1) {
+            return@withContext IndividualAddressWriteResult(
+                success = false,
+                newAddress = newAddress,
+                message = "Refused for safety: ${activeLeds.size} devices have Programming LEDs active (${activeLeds.joinToString()}). Press button so only 1 is active.",
+            )
+        }
+        val link = requireConnectedLink()
+        val procedures = ManagementProceduresImpl(link)
+        try {
+            val ok = procedures.writeAddress(CalimeroIndividualAddress(newAddress.raw))
+            if (ok) {
+                IndividualAddressWriteResult(
+                    success = true,
+                    newAddress = newAddress,
+                    message = "Successfully programmed ${activeLeds.single()} -> $newAddress",
+                )
+            } else {
+                IndividualAddressWriteResult(
+                    success = false,
+                    newAddress = newAddress,
+                    message = "Device did not confirm new address $newAddress",
+                )
+            }
+        } catch (e: Exception) {
+            IndividualAddressWriteResult(
+                success = false,
+                newAddress = newAddress,
+                message = "Write address failed: ${e.message ?: e.javaClass.simpleName}",
+            )
+        } finally {
+            procedures.detach()
         }
     }
 

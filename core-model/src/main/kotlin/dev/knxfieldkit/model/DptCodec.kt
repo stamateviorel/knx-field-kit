@@ -29,6 +29,7 @@ enum class HvacMode(val code: Int, val label: String) {
 
 enum class MainDpt(val defaultId: String, val label: String, val bitLength: Int) {
     DPT_1_BOOL("1.001", "Switch (On/Off)", 1),
+    DPT_3_DIM_STEP("3.007", "Relative Dimming / Blinds Step", 4),
     DPT_5_PERCENT("5.001", "Scaling (0..100 %)", 8),
     DPT_5_UNSIGNED("5.010", "1-Byte Unsigned (0..255)", 8),
     DPT_9_FLOAT("9.001", "2-Byte Float (°C / Lux)", 16),
@@ -77,6 +78,7 @@ object DptCodec {
         val sub = parts.getOrNull(1) ?: "001"
         return when (main) {
             1 -> MainDpt.DPT_1_BOOL
+            3 -> MainDpt.DPT_3_DIM_STEP
             5 -> if (sub in listOf("001", "004")) MainDpt.DPT_5_PERCENT else MainDpt.DPT_5_UNSIGNED
             9 -> MainDpt.DPT_9_FLOAT
             13 -> MainDpt.DPT_13_INT32
@@ -105,6 +107,22 @@ object DptCodec {
     fun decodeBool(bytes: ByteArray): Boolean {
         require(bytes.isNotEmpty())
         return (bytes.last().toInt() and 0x01) != 0
+    }
+
+    fun encodeDimmingStep(increase: Boolean, stepCode: Int = 1): ByteArray {
+        val step = stepCode.coerceIn(0, 7)
+        val cBit = if (increase) 0x08 else 0x00
+        return byteArrayOf((cBit or step).toByte())
+    }
+
+    fun decodeDimmingStep(bytes: ByteArray): String {
+        require(bytes.isNotEmpty())
+        val nibble = bytes.last().toInt() and 0x0F
+        val step = nibble and 0x07
+        if (step == 0) return "STOP"
+        val dir = if ((nibble and 0x08) != 0) "UP" else "DOWN"
+        val pct = 100.0 / (1 shl (step - 1))
+        return String.format(java.util.Locale.US, "%s %.1f%%", dir, pct)
     }
 
     fun encodePercent(percent: Double): ByteArray {
@@ -200,6 +218,7 @@ object DptCodec {
         return runCatching {
             when (resolveMainDpt(rawDpt)) {
                 MainDpt.DPT_1_BOOL -> if (decodeBool(payload)) "ON" else "OFF"
+                MainDpt.DPT_3_DIM_STEP -> decodeDimmingStep(payload)
                 MainDpt.DPT_5_PERCENT -> String.format(java.util.Locale.US, "%.1f", decodePercent(payload)) + " %"
                 MainDpt.DPT_5_UNSIGNED -> decodeUnsigned8(payload).toString()
                 MainDpt.DPT_9_FLOAT -> {

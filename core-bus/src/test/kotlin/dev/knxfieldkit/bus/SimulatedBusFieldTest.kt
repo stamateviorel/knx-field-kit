@@ -74,4 +74,28 @@ class SimulatedBusFieldTest {
         assertEquals("Loaded", diagnostics.loadState)
         assertEquals("Running", diagnostics.runState)
     }
+
+    @Test
+    fun restartAndSafeProgrammingAddressCommissioning() = runTest {
+        val sim = SimulatedKnxBusClient()
+        try {
+            sim.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = false))
+            assertTrue(sim.restartDevice(IndividualAddress(1, 1, 10)))
+            assertFalse(sim.restartDevice(IndividualAddress(1, 1, 40))) // offline
+
+            // Two LEDs active -> safely refused
+            sim.setProgrammingMode(IndividualAddress(1, 1, 15), true)
+            val refused = sim.writeProgrammingAddress(IndividualAddress(1, 1, 55))
+            assertFalse(refused.success)
+
+            // Single LED active (1.1.20) -> succeeds and moves device to 1.1.55
+            sim.setProgrammingMode(IndividualAddress(1, 1, 15), false)
+            val written = sim.writeProgrammingAddress(IndividualAddress(1, 1, 55))
+            assertTrue(written.success)
+            assertTrue(sim.pingDevice(IndividualAddress(1, 1, 55)).reachable)
+            assertTrue(sim.findProgrammingModeDevices().isEmpty())
+        } finally {
+            sim.close()
+        }
+    }
 }
