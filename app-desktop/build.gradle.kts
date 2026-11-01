@@ -27,6 +27,7 @@ compose.desktop {
     application {
         mainClass = "dev.knxfieldkit.app.MainKt"
         nativeDistributions {
+            includeAllModules = true
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "KNXFieldKit"
             packageVersion = "1.0.0"
