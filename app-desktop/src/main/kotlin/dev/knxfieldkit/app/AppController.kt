@@ -1,0 +1,803 @@
+package dev.knxfieldkit.app
+
+import dev.knxfieldkit.bus.CalimeroKnxBusClient
+import dev.knxfieldkit.bus.DemoKnxProjectFactory
+import dev.knxfieldkit.bus.KnxBusClient
+import dev.knxfieldkit.bus.SimulatedKnxBusClient
+import dev.knxfieldkit.knxproj.EtsCrypto
+import dev.knxfieldkit.knxproj.InvalidPasswordException
+import dev.knxfieldkit.knxproj.KnxKeyringReader
+import dev.knxfieldkit.knxproj.KnxProjArchiveReader
+import dev.knxfieldkit.knxproj.KnxProjParser
+import dev.knxfieldkit.knxproj.PasswordRequiredException
+import dev.knxfieldkit.model.AuditStatus
+import dev.knxfieldkit.model.BusConnectionConfig
+import dev.knxfieldkit.model.ConnectionState
+import dev.knxfieldkit.model.DeviceDiagnosticDetails
+import dev.knxfieldkit.model.DevicePingResult
+import dev.knxfieldkit.model.DptCodec
+import dev.knxfieldkit.model.EnrichedTelegram
+import dev.knxfieldkit.model.GatewayEndpoint
+import dev.knxfieldkit.model.GroupAddress
+import dev.knxfieldkit.model.HexBytes
+import dev.knxfieldkit.model.HvacMode
+import dev.knxfieldkit.model.IndividualAddress
+import dev.knxfieldkit.model.KnxKeyring
+import dev.knxfieldkit.model.KnxProject
+import dev.knxfieldkit.model.LineAuditEntry
+import dev.knxfieldkit.model.LineAuditReport
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import net.lingala.zip4j.ZipFile
+import net.lingala.zip4j.model.ZipParameters
+import net.lingala.zip4j.model.enums.AesKeyStrength
+import net.lingala.zip4j.model.enums.EncryptionMethod
+import java.io.File
+import java.nio.file.Files
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+enum class AppTab(val title: String) {
+    PROJECT("Project (.knxproj)"),
+    MONITOR("Live Bus Monitor"),
+    SENDER("Send & Poll"),
+    DIAGNOSTICS("Field Tests"),
+}
+
+data class PasswordPromptState(
+    val file: File,
+    val isKeyring: Boolean,
+    val errorMessage: String? = null,
+)
+
+data class GroupValueEntry(
+    val valueText: String,
+    val latencyMs: Long? = null,
+    val updatedAtMs: Long = System.currentTimeMillis(),
+)
+
+data class AppUiState(
+    val activeTab: AppTab = AppTab.PROJECT,
+    val project: KnxProject? = null,
+    val projectSourceLabel: String = "Demo Villa Project",
+    val keyring: KnxKeyring? = null,
+    val passwordPrompt: PasswordPromptState? = null,
+    val connectionState: ConnectionState = ConnectionState.Disconnected,
+    val isSimulatorActive: Boolean = false,
+    val discoveredGateways: List<GatewayEndpoint> = emptyList(),
+    val isDiscoveringGateways: Boolean = false,
+    val showConnectDialog: Boolean = false,
+    val telegrams: List<EnrichedTelegram> = emptyList(),
+    val monitorPaused: Boolean = false,
+    val monitorSearchQuery: String = "",
+    val monitorGhostOnly: Boolean = false,
+    val groupLiveValues: Map<GroupAddress, GroupValueEntry> = emptyMap(),
+    val selectedGroupAddressInput: String = "1/1/1",
+    val isPollingBatch: Boolean = false,
+    val pingResults: List<DevicePingResult> = emptyList(),
+    val isPinging: Boolean = false,
+    val lineAuditReport: LineAuditReport? = null,
+    val lineAuditInProgressEntries: List<LineAuditEntry> = emptyList(),
+    val isAuditingLine: Boolean = false,
+    val subnetScanResults: List<DevicePingResult> = emptyList(),
+    val isScanningSubnet: Boolean = false,
+    val subnetScanProgressText: String = "",
+    val programmingModeDevices: List<IndividualAddress> = emptyList(),
+    val isCheckingProgrammingMode: Boolean = false,
+    val deviceDiagnostics: DeviceDiagnosticDetails? = null,
+    val isReadingDiagnostics: Boolean = false,
+    val statusMessage: String = "Ready — Open a .knxproj file or connect to the KNX bus",
+)
+
+class AppController(
+    parentScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) : AutoCloseable {
+
+    private companion object {
+        const val MAX_TELEGRAM_HISTORY = 1_000
+        val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+            .withZone(ZoneId.systemDefault())
+    }
+
+    private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob())
+    private val simulatedClient = SimulatedKnxBusClient(scope)
+    private val calimeroClient = CalimeroKnxBusClient(scope)
+
+    @Volatile
+    private var activeClient: KnxBusClient = simulatedClient
+
+    private var subnetScanJob: Job? = null
+    private var batchPollJob: Job? = null
+
+    private val _uiState = MutableStateFlow(
+        AppUiState(
+            project = DemoKnxProjectFactory.createDemoVillaProject(),
+            projectSourceLabel = "Built-in Demo (Villa Horizon)",
+        )
+    )
+    val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
+
+    init {
+        observeClient(simulatedClient, isSim = true)
+        observeClient(calimeroClient, isSim = false)
+    }
+
+    private fun observeClient(client: KnxBusClient, isSim: Boolean) {
+        scope.launch {
+            client.connectionState.collect { st ->
+                if (activeClient === client) {
+                    _uiState.update {
+                        it.copy(
+                            connectionState = st,
+                            isSimulatorActive = isSim && st is ConnectionState.Connected,
+                        )
+                    }
+                }
+            }
+        }
+        scope.launch {
+            client.incomingTelegrams.collect { raw ->
+                if (activeClient !== client) return@collect
+                val current = _uiState.value
+                val enriched = EnrichedTelegram.enrich(raw, current.project)
+                _uiState.update { state ->
+                    val updatedList = if (state.monitorPaused) {
+                        state.telegrams
+                    } else {
+                        (listOf(enriched) + state.telegrams).take(MAX_TELEGRAM_HISTORY)
+                    }
+                    val updatedValues = if (raw.destinationGroup != null && enriched.decodedValue.isNotBlank()) {
+                        state.groupLiveValues + (raw.destinationGroup!! to GroupValueEntry(
+                            valueText = enriched.decodedValue,
+                            latencyMs = state.groupLiveValues[raw.destinationGroup]?.latencyMs,
+                        ))
+                    } else {
+                        state.groupLiveValues
+                    }
+                    state.copy(
+                        telegrams = updatedList,
+                        groupLiveValues = updatedValues,
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectTab(tab: AppTab) {
+        _uiState.update { it.copy(activeTab = tab) }
+    }
+
+    fun toggleConnectDialog(show: Boolean) {
+        _uiState.update { it.copy(showConnectDialog = show) }
+    }
+
+    fun openProjectOrKeyringFile(file: File) {
+        scope.launch {
+            if (!file.isFile) {
+                setStatus("File not found: ${file.absolutePath}")
+                return@launch
+            }
+            if (file.extension.equals("knxkeys", ignoreCase = true)) {
+                _uiState.update {
+                    it.copy(passwordPrompt = PasswordPromptState(file = file, isKeyring = true))
+                }
+                return@launch
+            }
+
+            try {
+                val protected = withContext(Dispatchers.IO) {
+                    KnxProjArchiveReader.isPasswordProtected(file)
+                }
+                if (protected) {
+                    _uiState.update {
+                        it.copy(passwordPrompt = PasswordPromptState(file = file, isKeyring = false))
+                    }
+                } else {
+                    val parsed = withContext(Dispatchers.IO) {
+                        KnxProjParser.openAndParse(file, password = null)
+                    }
+                    applyLoadedProject(parsed, file.name)
+                }
+            } catch (_: PasswordRequiredException) {
+                _uiState.update {
+                    it.copy(passwordPrompt = PasswordPromptState(file = file, isKeyring = false))
+                }
+            } catch (e: Exception) {
+                setStatus("Failed to open ${file.name}: ${e.message}")
+            }
+        }
+    }
+
+    fun submitFilePassword(password: String) {
+        val prompt = _uiState.value.passwordPrompt ?: return
+        scope.launch {
+            try {
+                if (prompt.isKeyring) {
+                    val kr = withContext(Dispatchers.IO) {
+                        KnxKeyringReader.parseKeyring(prompt.file, password)
+                    }
+                    _uiState.update {
+                        it.copy(
+                            keyring = kr,
+                            passwordPrompt = null,
+                            statusMessage = "Unlocked keyring '${kr.projectName}' (${kr.groupKeysHex.size} group keys, ${kr.interfaces.size} interfaces)",
+                        )
+                    }
+                } else {
+                    val parsed = withContext(Dispatchers.IO) {
+                        KnxProjParser.openAndParse(prompt.file, password)
+                    }
+                    applyLoadedProject(parsed, "${prompt.file.name} (Unlocked)")
+                }
+            } catch (_: InvalidPasswordException) {
+                _uiState.update {
+                    it.copy(
+                        passwordPrompt = prompt.copy(
+                            errorMessage = "Incorrect password for '${prompt.file.name}'. Checked ETS6 PBKDF2-SHA256 & ETS5 formats."
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(passwordPrompt = prompt.copy(errorMessage = e.message ?: "Decryption failed"))
+                }
+            }
+        }
+    }
+
+    fun dismissPasswordPrompt() {
+        _uiState.update { it.copy(passwordPrompt = null) }
+    }
+
+    private fun applyLoadedProject(project: KnxProject, label: String) {
+        simulatedClient.syncWithProject(project)
+        val firstGa = project.groupAddresses.keys.firstOrNull()?.toString() ?: "1/1/1"
+        _uiState.update {
+            it.copy(
+                project = project,
+                projectSourceLabel = label,
+                passwordPrompt = null,
+                selectedGroupAddressInput = firstGa,
+                lineAuditReport = null,
+                statusMessage = "Loaded '${project.name}': ${project.allDevices.size} devices, ${project.groupAddresses.size} group addresses",
+            )
+        }
+    }
+
+    /**
+     * Generates a genuine ETS6 AES-256 PBKDF2-encrypted `.knxproj` sample file and prompts to unlock it.
+     */
+    fun generateAndPromptEncryptedSample(targetFile: File, samplePassword: String = "knx2026") {
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val tmpDir = Files.createTempDirectory("ets6-sample-").toFile()
+                    try {
+                        val masterXml = """
+                            <?xml version="1.0" encoding="utf-8"?>
+                            <KNX xmlns="http://knx.org/xml/project/21">
+                              <MasterData>
+                                <Manufacturers>
+                                  <Manufacturer Id="M-0083" Name="MDT technologies" />
+                                  <Manufacturer Id="M-00C5" Name="Weinzierl Engineering" />
+                                </Manufacturers>
+                              </MasterData>
+                            </KNX>
+                        """.trimIndent()
+                        val zeroXml = """
+                            <?xml version="1.0" encoding="utf-8"?>
+                            <KNX xmlns="http://knx.org/xml/project/21" CreatedBy="ETS6" ToolVersion="6.2.2">
+                              <Project Id="P-0999">
+                                <ProjectInformation Name="Encrypted Penthouse ETS6 Sample" GroupAddressStyle="ThreeLevel" />
+                                <Installations>
+                                  <Installation Name="">
+                                    <Topology>
+                                      <Area Address="1" Name="Backbone">
+                                        <Line Address="1" Name="Penthouse Main TP">
+                                          <DeviceInstance Id="D-1" Address="1" Name="KNX IP Router 752 Secure" ProductRefId="M-00C5_H-1_P-1" />
+                                          <DeviceInstance Id="D-2" Address="10" Name="MDT Switch Actuator 8-fold" ProductRefId="M-0083_H-1_P-1">
+                                            <ComObjectInstanceRefs>
+                                              <ComObjectInstanceRef RefId="O-1" Text="Living Spots" FunctionText="Switch" DatapointType="DPST-1-1" Links="GA-1" />
+                                            </ComObjectInstanceRefs>
+                                          </DeviceInstance>
+                                          <DeviceInstance Id="D-3" Address="20" Name="MDT Smart Glass Push Button" ProductRefId="M-0083_H-1_P-2">
+                                            <ComObjectInstanceRefs>
+                                              <ComObjectInstanceRef RefId="O-2" Text="Room Temp" FunctionText="Temperature" DatapointType="DPST-9-1" Links="GA-2" />
+                                            </ComObjectInstanceRefs>
+                                          </DeviceInstance>
+                                        </Line>
+                                      </Area>
+                                    </Topology>
+                                    <GroupAddresses>
+                                      <GroupRanges>
+                                        <GroupRange Name="Lighting &amp; HVAC" RangeStart="2048" RangeEnd="4095">
+                                          <GroupAddress Id="P-0999-0_GA-1" Address="2305" Name="Penthouse Living Spots On/Off" DatapointType="DPST-1-1" />
+                                          <GroupAddress Id="P-0999-0_GA-2" Address="2306" Name="Penthouse Room Temperature" DatapointType="DPST-9-1" />
+                                        </GroupRange>
+                                      </GroupRanges>
+                                    </GroupAddresses>
+                                  </Installation>
+                                </Installations>
+                              </Project>
+                            </KNX>
+                        """.trimIndent()
+
+                        val masterFile = File(tmpDir, "knx_master.xml").apply { writeText(masterXml) }
+                        val zeroFile = File(tmpDir, "0.xml").apply { writeText(zeroXml) }
+                        val innerZipFile = File(tmpDir, "P-0999.zip")
+                        val ets6Derived = EtsCrypto.deriveEts6ZipPassword(samplePassword)
+                        val encParams = ZipParameters().apply {
+                            isEncryptFiles = true
+                            encryptionMethod = EncryptionMethod.AES
+                            aesKeyStrength = AesKeyStrength.KEY_STRENGTH_256
+                        }
+                        ZipFile(innerZipFile, ets6Derived).use { iz ->
+                            iz.addFile(zeroFile, encParams)
+                        }
+
+                        targetFile.parentFile?.mkdirs()
+                        if (targetFile.exists()) targetFile.delete()
+                        ZipFile(targetFile).use { oz ->
+                            oz.addFile(masterFile)
+                            oz.addFile(innerZipFile)
+                        }
+                    } finally {
+                        tmpDir.deleteRecursively()
+                    }
+                }
+                setStatus("Created ETS6 password-protected sample '${targetFile.name}' (password: $samplePassword)")
+                openProjectOrKeyringFile(targetFile)
+            } catch (e: Exception) {
+                setStatus("Failed creating sample: ${e.message}")
+            }
+        }
+    }
+
+    fun discoverGateways() {
+        scope.launch {
+            _uiState.update { it.copy(isDiscoveringGateways = true) }
+            val realGateways = runCatching { calimeroClient.discoverGateways(2_500L) }.getOrDefault(emptyList())
+            val simGateways = simulatedClient.discoverGateways(100L)
+            val combined = realGateways + simGateways
+            _uiState.update {
+                it.copy(
+                    discoveredGateways = combined,
+                    isDiscoveringGateways = false,
+                    statusMessage = "Discovered ${realGateways.size} LAN KNXnet/IP gateway(s) + 1 Virtual Bus Simulator",
+                )
+            }
+        }
+    }
+
+    fun connectSimulator() {
+        scope.launch {
+            runCatching { activeClient.disconnect() }
+            activeClient = simulatedClient
+            _uiState.value.project?.let { simulatedClient.syncWithProject(it) }
+            simulatedClient.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = true))
+            _uiState.update {
+                it.copy(
+                    showConnectDialog = false,
+                    statusMessage = "Connected to Virtual KNX Bus Simulator (live periodic sensor traffic enabled)",
+                )
+            }
+        }
+    }
+
+    fun connectTunneling(
+        host: String,
+        port: Int,
+        useNat: Boolean,
+        userPassword: String? = null,
+        deviceAuthCode: String? = null,
+    ) {
+        scope.launch {
+            runCatching { activeClient.disconnect() }
+            activeClient = calimeroClient
+            try {
+                calimeroClient.connect(
+                    BusConnectionConfig.IpTunneling(
+                        gatewayHost = host.trim(),
+                        gatewayPort = port,
+                        useNat = useNat,
+                        userPassword = userPassword?.takeIf { it.isNotBlank() },
+                        deviceAuthCode = deviceAuthCode?.takeIf { it.isNotBlank() },
+                    )
+                )
+                _uiState.update {
+                    it.copy(
+                        showConnectDialog = false,
+                        statusMessage = "Connected via KNXnet/IP Tunneling to $host:$port",
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("KNXnet/IP Tunneling failed: ${e.message}")
+            }
+        }
+    }
+
+    fun connectRouting(multicastAddress: String = "224.0.23.12", port: Int = 3671) {
+        scope.launch {
+            runCatching { activeClient.disconnect() }
+            activeClient = calimeroClient
+            try {
+                calimeroClient.connect(BusConnectionConfig.IpRouting(multicastAddress = multicastAddress.trim(), port = port))
+                _uiState.update {
+                    it.copy(
+                        showConnectDialog = false,
+                        statusMessage = "Connected via KNXnet/IP Routing ($multicastAddress:$port)",
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("KNXnet/IP Routing failed: ${e.message}")
+            }
+        }
+    }
+
+    fun disconnectBus() {
+        scope.launch {
+            runCatching { activeClient.disconnect() }
+            setStatus("Disconnected from KNX bus")
+        }
+    }
+
+    fun setMonitorPaused(paused: Boolean) = _uiState.update { it.copy(monitorPaused = paused) }
+    fun setMonitorSearch(query: String) = _uiState.update { it.copy(monitorSearchQuery = query) }
+    fun setMonitorGhostOnly(ghostOnly: Boolean) = _uiState.update { it.copy(monitorGhostOnly = ghostOnly) }
+    fun clearMonitorLog() = _uiState.update { it.copy(telegrams = emptyList()) }
+
+    fun selectGroupAddressForSender(addressText: String) {
+        _uiState.update { it.copy(selectedGroupAddressInput = addressText) }
+    }
+
+    fun readGroupAddress(addressText: String) {
+        val ga = GroupAddress.parseOrNull(addressText) ?: run {
+            setStatus("Invalid Group Address: '$addressText'")
+            return
+        }
+        scope.launch {
+            try {
+                val res = activeClient.sendGroupRead(ga)
+                val dpt = _uiState.value.project?.findGroupAddress(ga)?.dpt
+                if (res.responded && res.payload != null) {
+                    val decoded = DptCodec.decode(dpt, res.payload!!)
+                    _uiState.update { st ->
+                        st.copy(
+                            groupLiveValues = st.groupLiveValues + (ga to GroupValueEntry(decoded, res.latencyMs)),
+                            statusMessage = "Read $ga -> $decoded (from ${res.responder}, ${res.latencyMs} ms)",
+                        )
+                    }
+                } else {
+                    setStatus("Read $ga: No response (${res.errorMessage ?: "timeout"})")
+                }
+            } catch (e: Exception) {
+                setStatus("GroupRead failed: ${e.message}")
+            }
+        }
+    }
+
+    fun pollAllProjectGroupAddresses() {
+        val gas = _uiState.value.project?.groupAddresses?.keys?.toList().orEmpty()
+        if (gas.isEmpty()) return
+        batchPollJob?.cancel()
+        batchPollJob = scope.launch {
+            _uiState.update { it.copy(isPollingBatch = true, statusMessage = "Polling ${gas.size} group addresses...") }
+            var answered = 0
+            try {
+                for (ga in gas) {
+                    val res = activeClient.sendGroupRead(ga, timeoutMs = 1_200L)
+                    if (res.responded && res.payload != null) {
+                        answered++
+                        val dpt = _uiState.value.project?.findGroupAddress(ga)?.dpt
+                        val decoded = DptCodec.decode(dpt, res.payload!!)
+                        _uiState.update { st ->
+                            st.copy(groupLiveValues = st.groupLiveValues + (ga to GroupValueEntry(decoded, res.latencyMs)))
+                        }
+                    }
+                    delay(125L) // Safe ~8 telegrams/s TP1 rate limit
+                }
+                setStatus("Batch poll complete: $answered / ${gas.size} group addresses responded")
+            } catch (_: CancellationException) {
+                setStatus("Batch poll cancelled")
+            } catch (e: Exception) {
+                setStatus("Batch poll error: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(isPollingBatch = false) }
+            }
+        }
+    }
+
+    fun writeGroupSwitch(addressText: String, value: Boolean) =
+        writeGroupInternal(addressText, DptCodec.encodeBool(value), compact6Bit = true, summary = if (value) "ON" else "OFF")
+
+    fun writeGroupPercent(addressText: String, percent: Double) =
+        writeGroupInternal(addressText, DptCodec.encodePercent(percent), compact6Bit = false, summary = "${"%.0f".format(percent)} %")
+
+    fun writeGroupFloat16(addressText: String, value: Double) =
+        writeGroupInternal(addressText, DptCodec.encodeFloat16(value), compact6Bit = false, summary = "%.2f".format(value))
+
+    fun writeGroupScene(addressText: String, scene1Based: Int) =
+        writeGroupInternal(addressText, DptCodec.encodeScene(scene1Based.coerceIn(1, 64)), compact6Bit = false, summary = "Scene $scene1Based")
+
+    fun writeGroupHvac(addressText: String, mode: HvacMode) =
+        writeGroupInternal(addressText, DptCodec.encodeHvacMode(mode), compact6Bit = false, summary = mode.label)
+
+    fun writeGroupRawHex(addressText: String, hexPayload: String, compact6Bit: Boolean) {
+        val bytes = runCatching { HexBytes.fromHex(hexPayload) }.getOrElse {
+            setStatus("Invalid hex payload: ${it.message}")
+            return
+        }
+        writeGroupInternal(addressText, bytes, compact6Bit = compact6Bit, summary = "0x${HexBytes.toHex(bytes)}")
+    }
+
+    private fun writeGroupInternal(addressText: String, payload: ByteArray, compact6Bit: Boolean, summary: String) {
+        val ga = GroupAddress.parseOrNull(addressText) ?: run {
+            setStatus("Invalid Group Address: '$addressText'")
+            return
+        }
+        scope.launch {
+            try {
+                activeClient.sendGroupWrite(ga, payload, compact6Bit)
+                setStatus("Sent GroupValue_Write $ga = $summary")
+            } catch (e: Exception) {
+                setStatus("Write failed (ensure bus is connected): ${e.message}")
+            }
+        }
+    }
+
+    fun pingIndividualDevice(addressText: String) {
+        val ia = IndividualAddress.parseOrNull(addressText) ?: run {
+            setStatus("Invalid Individual Address: '$addressText'")
+            return
+        }
+        scope.launch {
+            _uiState.update { it.copy(isPinging = true) }
+            try {
+                val res = activeClient.pingDevice(ia)
+                _uiState.update { st ->
+                    st.copy(
+                        pingResults = (listOf(res) + st.pingResults).take(50),
+                        statusMessage = if (res.reachable) {
+                            "Device $ia is ONLINE (Mask ${res.maskVersionHex}, ${res.latencyMs} ms)"
+                        } else {
+                            "Device $ia UNREACHABLE (${res.errorMessage ?: "no reply"})"
+                        },
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("Ping error: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(isPinging = false) }
+            }
+        }
+    }
+
+    fun inspectDeviceDiagnostics(addressText: String) {
+        val ia = IndividualAddress.parseOrNull(addressText) ?: run {
+            setStatus("Invalid Individual Address: '$addressText'")
+            return
+        }
+        scope.launch {
+            _uiState.update { it.copy(isReadingDiagnostics = true) }
+            try {
+                val diag = activeClient.readDeviceDiagnostics(ia)
+                _uiState.update {
+                    it.copy(
+                        deviceDiagnostics = diag,
+                        statusMessage = if (diag.reachable) "Read diagnostics from $ia" else "Device $ia did not respond",
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("Diagnostics readout failed: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(isReadingDiagnostics = false) }
+            }
+        }
+    }
+
+    fun runProjectLineAudit(area: Int, line: Int) {
+        val topoLine = _uiState.value.project?.findLine(area, line) ?: run {
+            setStatus("Line $area.$line not found in loaded project")
+            return
+        }
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isAuditingLine = true,
+                    lineAuditReport = null,
+                    lineAuditInProgressEntries = emptyList(),
+                    statusMessage = "Auditing ${topoLine.devices.size} devices on Line ${topoLine.id} (${topoLine.name})...",
+                )
+            }
+            try {
+                val report = activeClient.auditLine(
+                    line = topoLine,
+                    delayBetweenMs = 60L,
+                    onProgress = { entry ->
+                        _uiState.update { st ->
+                            st.copy(lineAuditInProgressEntries = st.lineAuditInProgressEntries + entry)
+                        }
+                    },
+                )
+                _uiState.update {
+                    it.copy(
+                        lineAuditReport = report,
+                        statusMessage = "Line ${report.lineId} Audit finished: ${report.onlineCount} online, ${report.unreachableCount} unreachable, ${report.mismatchCount} mask mismatch",
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("Line audit failed (ensure bus is connected): ${e.message}")
+            } finally {
+                _uiState.update { it.copy(isAuditingLine = false) }
+            }
+        }
+    }
+
+    fun startSubnetScan(area: Int, line: Int, startDevice: Int = 1, endDevice: Int = 32) {
+        val safeArea = area.coerceIn(0, 15)
+        val safeLine = line.coerceIn(0, 15)
+        val from = startDevice.coerceIn(0, 255)
+        val to = endDevice.coerceIn(from, 255)
+        val targets = (from..to).map { IndividualAddress(safeArea, safeLine, it) }
+
+        subnetScanJob?.cancel()
+        subnetScanJob = scope.launch {
+            _uiState.update {
+                it.copy(
+                    isScanningSubnet = true,
+                    subnetScanResults = emptyList(),
+                    subnetScanProgressText = "Scanning $safeArea.$safeLine.$from..$to",
+                )
+            }
+            try {
+                var idx = 0
+                activeClient.scanAddresses(targets, delayBetweenMs = 40L, timeoutPerDeviceMs = 600L).collect { res ->
+                    idx++
+                    _uiState.update { st ->
+                        st.copy(
+                            subnetScanResults = if (res.reachable) st.subnetScanResults + res else st.subnetScanResults,
+                            subnetScanProgressText = "Scanned ${res.address} ($idx/${targets.size})",
+                        )
+                    }
+                }
+                setStatus("Subnet scan complete on $safeArea.$safeLine.$from..$to: ${_uiState.value.subnetScanResults.size} active device(s) found")
+            } catch (_: CancellationException) {
+                setStatus("Subnet scan cancelled")
+            } catch (e: Exception) {
+                setStatus("Subnet scan failed: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(isScanningSubnet = false) }
+            }
+        }
+    }
+
+    fun cancelSubnetScan() {
+        subnetScanJob?.cancel()
+    }
+
+    fun scanProgrammingModeLeds() {
+        scope.launch {
+            _uiState.update { it.copy(isCheckingProgrammingMode = true) }
+            try {
+                val active = activeClient.findProgrammingModeDevices()
+                _uiState.update {
+                    it.copy(
+                        programmingModeDevices = active,
+                        statusMessage = if (active.isEmpty()) {
+                            "No devices currently have Programming LED active"
+                        } else {
+                            "Found ${active.size} device(s) in Programming Mode: ${active.joinToString()}"
+                        },
+                    )
+                }
+            } catch (e: Exception) {
+                setStatus("Programming Mode scan failed: ${e.message}")
+            } finally {
+                _uiState.update { it.copy(isCheckingProgrammingMode = false) }
+            }
+        }
+    }
+
+    fun toggleSimulatedDeviceOnline(address: IndividualAddress, online: Boolean) {
+        simulatedClient.setDeviceOnline(address, online)
+        setStatus("Simulator: Set device $address ${if (online) "ONLINE" else "OFFLINE (Simulated Wiring Fault)"}")
+    }
+
+    fun toggleSimulatedProgrammingLed(address: IndividualAddress, active: Boolean) {
+        simulatedClient.setProgrammingMode(address, active)
+        setStatus("Simulator: Set Programming LED on $address ${if (active) "ON" else "OFF"}")
+    }
+
+    fun exportMonitorCsv(targetFile: File) {
+        scope.launch {
+            val rows = _uiState.value.telegrams
+            withContext(Dispatchers.IO) {
+                val sb = StringBuilder()
+                sb.appendLine("Timestamp,SourceAddr,SourceName,Destination,DestinationName,APCI,DPT,DecodedValue,GhostAddress,RawPayloadHex")
+                for (row in rows) {
+                    val t = row.telegram
+                    val ts = TIME_FMT.format(Instant.ofEpochMilli(t.timestampEpochMs))
+                    val dst = t.destinationGroup?.toString() ?: t.destinationIndividual?.toString().orEmpty()
+                    sb.appendLine(
+                        listOf(
+                            ts,
+                            t.source.toString(),
+                            csvEscape(row.sourceDeviceName.orEmpty()),
+                            dst,
+                            csvEscape(row.destinationName.orEmpty()),
+                            t.apci.label,
+                            row.dptId.orEmpty(),
+                            csvEscape(row.decodedValue),
+                            row.isUnmappedGroup.toString(),
+                            HexBytes.toHex(t.payload),
+                        ).joinToString(",")
+                    )
+                }
+                targetFile.writeText(sb.toString(), Charsets.UTF_8)
+            }
+            setStatus("Exported ${rows.size} telegrams to ${targetFile.absolutePath}")
+        }
+    }
+
+    fun exportProjectMarkdown(targetFile: File) {
+        val proj = _uiState.value.project ?: return
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                val sb = StringBuilder()
+                sb.appendLine("# KNX Project Field Report: ${proj.name}")
+                sb.appendLine("- **Project ID**: `${proj.projectId}`")
+                sb.appendLine("- **ETS Version**: `${proj.etsVersion.ifBlank { "N/A" }}`")
+                sb.appendLine("- **Password Protected**: `${proj.passwordProtected}`")
+                sb.appendLine("- **Total Devices**: `${proj.allDevices.size}`")
+                sb.appendLine("- **Total Group Addresses**: `${proj.groupAddresses.size}`")
+                sb.appendLine()
+                sb.appendLine("## Topology")
+                for (area in proj.areas) {
+                    sb.appendLine("### Area ${area.area} — ${area.name}")
+                    for (line in area.lines) {
+                        sb.appendLine("#### Line ${line.id} — ${line.name} (${line.mediumType})")
+                        sb.appendLine("| Address | Name | Manufacturer | Product | Mask |")
+                        sb.appendLine("| :--- | :--- | :--- | :--- | :--- |")
+                        for (dev in line.devices) {
+                            sb.appendLine("| `${dev.address}` | ${dev.name} | ${dev.manufacturerName} | ${dev.productName} | `${dev.maskVersion ?: "-"}` |")
+                        }
+                        sb.appendLine()
+                    }
+                }
+                sb.appendLine("## Group Addresses")
+                sb.appendLine("| Address | Name | DPT | Linked Objects |")
+                sb.appendLine("| :--- | :--- | :--- | :--- |")
+                for (ga in proj.groupAddresses.values.sortedBy { it.address }) {
+                    sb.appendLine("| `${ga.address}` | ${ga.name} | `${ga.dpt ?: "-"}` | ${ga.linkedObjects.size} |")
+                }
+                targetFile.writeText(sb.toString(), Charsets.UTF_8)
+            }
+            setStatus("Exported project report to ${targetFile.absolutePath}")
+        }
+    }
+
+    private fun csvEscape(s: String): String =
+        if (s.any { it == ',' || it == '"' || it == '\n' }) "\"${s.replace("\"", "\"\"")}\"" else s
+
+    private fun setStatus(msg: String) {
+        _uiState.update { it.copy(statusMessage = msg) }
+    }
+
+    override fun close() {
+        simulatedClient.close()
+        calimeroClient.close()
+        scope.cancel()
+    }
+}
