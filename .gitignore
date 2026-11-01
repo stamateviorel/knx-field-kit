@@ -1,0 +1,27 @@
+# Gradle & Kotlin
+.gradle/
+**/build/
+!src/**/build/
+kotlin-js-store/
+
+# IDE & Editor
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+local.properties
+
+# OS Artifacts
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Sensitive KNX Project / Keyring Files (keep out of VCS unless in test fixtures)
+*.knxkeys
+!**/src/test/resources/**/*.knxkeys
+*.knxproj
+!**/src/test/resources/**/*.knxproj
+
+# Local AI scratch outputs
+.local-ai-tmp/
