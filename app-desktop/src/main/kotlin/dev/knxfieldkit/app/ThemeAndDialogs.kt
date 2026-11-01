@@ -64,8 +64,17 @@ fun PasswordUnlockDialog(prompt: PasswordPromptState, onSubmit: (String) -> Unit
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (prompt.file.name.contains("sample", ignoreCase = true) ||
+                    prompt.file.name.contains("penthouse_ets6", ignoreCase = true)
+                ) {
+                    OutlinedButton(onClick = { onSubmit("knx2026") }) {
+                        Text("Unlock Sample (knx2026)")
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
     )

@@ -140,8 +140,21 @@ fun KnxFieldKitApp(controller: AppController) {
     }
 }
 
-fun main() = application {
+fun main(args: Array<String>) = application {
     val controller = remember { AppController() }
+    LaunchedEffect(Unit) {
+        if ("--connect-sim" in args) {
+            controller.connectSimulator()
+        }
+        if ("--prompt-ets6-sample" in args) {
+            val sampleFile = File("samples", "penthouse_ets6_encrypted.knxproj")
+            controller.generateAndPromptEncryptedSample(sampleFile, samplePassword = "knx2026")
+        }
+        args.firstOrNull { !it.startsWith("--") }?.let { path ->
+            val target = File(path)
+            if (target.isFile) controller.openProjectOrKeyringFile(target)
+        }
+    }
     DisposableEffect(Unit) { onDispose { controller.close() } }
     Window(
         onCloseRequest = ::exitApplication,
