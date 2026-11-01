@@ -124,13 +124,17 @@ object KnxProjParser {
                     val mfrName = if (mfrId.isNotEmpty()) (manufacturerNames[mfrId] ?: mfrId) else ""
                     val (prodName, orderNum) = productCatalog[prodRef] ?: ("" to "")
                     val devLinkedGas = linkedSetOf<GroupAddress>()
+                    val devComObjects = mutableListOf<DeviceComObject>()
 
                     // ETS5.7+ / ETS6 ComObjectInstanceRef Links + ETS4/5 Send/Receive connectors
-                    for (coEl in devEl.getElementsByTagName("ComObjectInstanceRef").elements()) {
+                    for ((coIdx, coEl) in devEl.getElementsByTagName("ComObjectInstanceRef").elements().withIndex()) {
                         val refId = coEl.getAttribute("RefId")
                         val coText = coEl.getAttribute("Text")
                         val fnText = coEl.getAttribute("FunctionText")
                         val coDpt = DptCodec.normalizeDptId(coEl.getAttribute("DatapointType"))
+                        val objNum = extractObjectNumber(refId) ?: coIdx
+                        val flags = parseComFlags(coEl)
+                        val sizeLabel = coEl.getAttribute("ObjectSize").trim().ifBlank { inferSizeLabel(coDpt) }
 
                         val refKeys = mutableListOf<String>()
                         val linksAttr = coEl.getAttribute("Links").trim()
@@ -150,16 +154,30 @@ object KnxProjParser {
                             functionText = fnText,
                             dpt = coDpt,
                             deviceAddress = ia,
+                            objectNumber = objNum,
+                            flags = flags,
                         )
+                        val coGas = linkedSetOf<GroupAddress>()
                         for (rk in refKeys) {
                             val ga = gaKeyToAddress[rk] ?: gaKeyToAddress[rk.substringAfter('_', rk)] ?: continue
                             devLinkedGas += ga
+                            coGas += ga
                             val existing = gaByRaw[ga] ?: continue
                             gaByRaw[ga] = existing.copy(
                                 dpt = existing.dpt ?: coDpt,
                                 linkedObjects = existing.linkedObjects + linkObj,
                             )
                         }
+                        devComObjects += DeviceComObject(
+                            number = objNum,
+                            id = refId.ifBlank { "CO-$objNum" },
+                            name = coText.ifBlank { "Object $objNum" },
+                            functionText = fnText,
+                            dpt = coDpt,
+                            sizeLabel = sizeLabel,
+                            flags = flags,
+                            linkedGroupAddresses = coGas.toList(),
+                        )
                     }
 
                     // Direct Send / Receive elements directly under DeviceInstance (if not wrapped in ComObjectInstanceRef)
@@ -181,6 +199,7 @@ object KnxProjParser {
                         hardwareSerial = devEl.getAttribute("SerialNumber").takeIf { it.isNotBlank() },
                         maskVersion = devEl.getAttribute("MaskVersion").takeIf { it.isNotBlank() },
                         groupAddresses = devLinkedGas.toList(),
+                        comObjects = devComObjects.sortedBy { it.number },
                     )
                 }
 
@@ -193,6 +212,15 @@ object KnxProjParser {
                 )
             }
             areas += TopologyArea(area = areaNum, name = areaName, lines = lines.sortedBy { it.line })
+        }
+
+        val groupRanges = mutableListOf<GroupRangeNode>()
+        var grSeq = 0
+        for (grRoot in zeroDoc.getElementsByTagName("GroupRanges").elements()) {
+            for (grEl in grRoot.directChildElements("GroupRange")) {
+                grSeq++
+                groupRanges += parseGroupRangeRecursive(grEl, groupAddressStyle, depth = 0, fallbackSeq = grSeq)
+            }
         }
 
         val locations = mutableListOf<BuildingLocation>()
@@ -210,8 +238,89 @@ object KnxProjParser {
             passwordProtected = archive.passwordProtected,
             areas = areas.sortedBy { it.area },
             groupAddresses = gaByRaw,
+            groupRanges = groupRanges,
             locations = locations,
         )
+    }
+
+    private fun parseGroupRangeRecursive(
+        grEl: Element,
+        style: GroupAddressStyle,
+        depth: Int,
+        fallbackSeq: Int,
+    ): GroupRangeNode {
+        val rawId = grEl.getAttribute("Id").trim().ifBlank { "GR-$depth-$fallbackSeq" }
+        val name = grEl.getAttribute("Name").ifBlank { "Group Range" }
+        val start = grEl.getAttribute("RangeStart").trim().toIntOrNull()
+        val end = grEl.getAttribute("RangeEnd").trim().toIntOrNull()
+
+        val directAddresses = grEl.directChildElements("GroupAddress").mapNotNull { gaEl ->
+            val raw = gaEl.getAttribute("Address").trim().toIntOrNull() ?: return@mapNotNull null
+            if (raw in 1..0xFFFF) GroupAddress(raw, style) else null
+        }.sorted()
+
+        var childSeq = 0
+        val children = grEl.directChildElements("GroupRange").map { childEl ->
+            childSeq++
+            parseGroupRangeRecursive(childEl, style, depth = depth + 1, fallbackSeq = fallbackSeq * 100 + childSeq)
+        }
+
+        val prefixLabel = when {
+            start != null && style == GroupAddressStyle.THREE_LEVEL -> {
+                val main = (start ushr 11) and 0x1F
+                val mid = (start ushr 8) and 0x07
+                val span = if (end != null) end - start else if (depth == 0) 2047 else 255
+                if (depth == 0 && span >= 1024) "$main" else "$main/$mid"
+            }
+            start != null && style == GroupAddressStyle.TWO_LEVEL -> {
+                val main = (start ushr 11) and 0x1F
+                "$main"
+            }
+            directAddresses.isNotEmpty() && style == GroupAddressStyle.THREE_LEVEL -> {
+                val first = directAddresses.first()
+                if (depth == 0) "${first.main3}" else "${first.main3}/${first.middle3}"
+            }
+            else -> ""
+        }
+
+        return GroupRangeNode(
+            id = rawId,
+            prefixLabel = prefixLabel,
+            name = name,
+            directAddresses = directAddresses,
+            children = children,
+        )
+    }
+
+    private fun extractObjectNumber(refId: String): Int? {
+        if (refId.isBlank()) return null
+        val oMatch = Regex("(?:^|_)O-(\\d+)").find(refId)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (oMatch != null) return oMatch
+        return Regex("(\\d+)$").find(refId)?.groupValues?.getOrNull(1)?.toIntOrNull()
+    }
+
+    private fun parseFlagAttr(el: Element, attr: String, default: Boolean): Boolean {
+        val raw = el.getAttribute(attr).trim()
+        if (raw.isEmpty()) return default
+        return raw.equals("Enabled", ignoreCase = true) || raw.equals("true", ignoreCase = true) || raw == "1"
+    }
+
+    private fun parseComFlags(coEl: Element): ComObjectFlags = ComObjectFlags(
+        c = parseFlagAttr(coEl, "CommunicationFlag", default = true),
+        r = parseFlagAttr(coEl, "ReadFlag", default = false),
+        w = parseFlagAttr(coEl, "WriteFlag", default = true),
+        t = parseFlagAttr(coEl, "TransmitFlag", default = true),
+        u = parseFlagAttr(coEl, "UpdateFlag", default = false),
+    )
+
+    private fun inferSizeLabel(dpt: String?): String = when (DptCodec.resolveMainDpt(dpt)) {
+        MainDpt.DPT_1_BOOL -> "1 bit"
+        MainDpt.DPT_3_DIM_STEP -> "4 bit"
+        MainDpt.DPT_5_PERCENT, MainDpt.DPT_5_UNSIGNED, MainDpt.DPT_17_SCENE, MainDpt.DPT_20_HVAC -> "1 byte"
+        MainDpt.DPT_9_FLOAT -> "2 bytes"
+        MainDpt.DPT_13_INT32, MainDpt.DPT_14_FLOAT32 -> "4 bytes"
+        MainDpt.DPT_16_STRING -> "14 bytes"
+        MainDpt.RAW_BYTES -> "1 byte"
     }
 
     private fun parseSpaceRecursive(

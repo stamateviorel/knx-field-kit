@@ -1,31 +1,55 @@
 package dev.knxfieldkit.app
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Router
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import dev.knxfieldkit.model.*
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun KnxFieldKitTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = Color(0xFF2ECC71),
-            secondary = Color(0xFF38BDF8),
-            tertiary = Color(0xFFF59E0B),
-            background = Color(0xFF0F172A),
-            surface = Color(0xFF1E293B),
-            surfaceVariant = Color(0xFF334155),
-            error = Color(0xFFEF4444)
+            primary = WorkbenchColors.AccentEmerald,
+            secondary = WorkbenchColors.AccentSky,
+            tertiary = WorkbenchColors.AccentAmber,
+            background = WorkbenchColors.BgCanvas,
+            surface = WorkbenchColors.BgPanel,
+            surfaceVariant = WorkbenchColors.BgHeader,
+            onBackground = WorkbenchColors.TextPrimary,
+            onSurface = WorkbenchColors.TextPrimary,
+            onSurfaceVariant = WorkbenchColors.TextSecondary,
+            outline = WorkbenchColors.BorderSubtle,
+            error = WorkbenchColors.AccentRed,
         ),
-        content = content
+        shapes = Shapes(
+            extraSmall = RoundedCornerShape(4.dp),
+            small = RoundedCornerShape(5.dp),
+            medium = RoundedCornerShape(6.dp),
+            large = RoundedCornerShape(8.dp),
+        ),
+        content = content,
     )
 }
 
@@ -35,48 +59,71 @@ fun PasswordUnlockDialog(prompt: PasswordPromptState, onSubmit: (String) -> Unit
     var showPlain by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (prompt.isKeyring) "Unlock KNX Secure Keyring (.knxkeys)" else "Unlock Password-Protected .knxproj") },
+        containerColor = WorkbenchColors.BgPanel,
+        titleContentColor = WorkbenchColors.TextPrimary,
+        textContentColor = WorkbenchColors.TextSecondary,
+        shape = RoundedCornerShape(8.dp),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Key, contentDescription = null, tint = WorkbenchColors.AccentAmber, modifier = Modifier.size(18.dp))
+                Text(
+                    text = if (prompt.isKeyring) "Unlock KNX Secure Keyring (.knxkeys)" else "Unlock Password-Protected .knxproj",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
         text = {
-            Column {
-                Text(prompt.file.name)
-                Text("Supports ETS6 (UTF-16LE PBKDF2-SHA256 AES-256) & ETS4/5 encryption")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(prompt.file.name, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = WorkbenchColors.AccentSky)
+                Text(
+                    text = "Supports ETS6 (UTF-16LE PBKDF2-HMAC-SHA256 + AES-256) & ETS4/5 archive encryption.",
+                    fontSize = 11.sp,
+                    color = WorkbenchColors.TextSecondary,
+                )
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text("Project / Keyring Password", fontSize = 11.sp) },
                     visualTransformation = if (showPlain) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
-                        TextButton(onClick = { showPlain = !showPlain }) {
-                            Text(if (showPlain) "Hide" else "Show")
-                        }
+                        DesktopButton(
+                            text = if (showPlain) "Hide" else "Show",
+                            onClick = { showPlain = !showPlain },
+                            compact = true,
+                        )
                     },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 if (prompt.errorMessage != null) {
-                    Text(prompt.errorMessage, color = MaterialTheme.colorScheme.error)
+                    Text(prompt.errorMessage, color = WorkbenchColors.AccentRed, fontSize = 11.sp)
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onSubmit(password) }, enabled = password.isNotEmpty()) {
-                Text("Unlock")
-            }
+            DesktopPrimaryButton(
+                text = "Unlock Archive",
+                icon = Icons.Default.LockOpen,
+                onClick = { onSubmit(password) },
+                enabled = password.isNotEmpty(),
+            )
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (prompt.file.name.contains("sample", ignoreCase = true) ||
                     prompt.file.name.contains("penthouse_ets6", ignoreCase = true)
                 ) {
-                    OutlinedButton(onClick = { onSubmit("knx2026") }) {
-                        Text("Unlock Sample (knx2026)")
-                    }
+                    DesktopButton(
+                        text = "Fill Sample (knx2026)",
+                        onClick = { onSubmit("knx2026") },
+                        accentColor = WorkbenchColors.AccentAmber,
+                        active = true,
+                    )
                 }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
+                DesktopButton(text = "Cancel", onClick = onDismiss)
             }
-        }
+        },
     )
 }
 
@@ -89,57 +136,103 @@ fun GatewayConnectDialog(state: AppUiState, controller: AppController) {
     var secureAuthCode by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = { controller.toggleConnectDialog(false) },
-        title = { Text("Connect to KNX Gateway") },
+        containerColor = WorkbenchColors.BgPanel,
+        shape = RoundedCornerShape(8.dp),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Router, contentDescription = null, tint = WorkbenchColors.AccentSky, modifier = Modifier.size(18.dp))
+                Text("KNXnet/IP Interface & Bus Connection", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = WorkbenchColors.TextPrimary)
+            }
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { controller.connectSimulator() }) {
-                        Text("Virtual KNX Simulator")
-                    }
-                    OutlinedButton(onClick = { controller.discoverGateways() }, enabled = !state.isDiscoveringGateways) {
-                        Text(if (state.isDiscoveringGateways) "Scanning..." else "Scan LAN Gateways")
-                    }
-                    OutlinedButton(onClick = { controller.connectRouting() }) {
-                        Text("IP Routing")
-                    }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.width(460.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DesktopPrimaryButton(
+                        text = "Start Virtual Bus",
+                        icon = Icons.Default.Bolt,
+                        onClick = { controller.connectSimulator() },
+                    )
+                    DesktopButton(
+                        text = if (state.isDiscoveringGateways) "Scanning LAN..." else "Scan LAN Gateways",
+                        icon = Icons.Default.Search,
+                        onClick = { controller.discoverGateways() },
+                        enabled = !state.isDiscoveringGateways,
+                    )
+                    DesktopButton(
+                        text = "IP Routing (224.0.23.12)",
+                        onClick = { controller.connectRouting() },
+                    )
                 }
                 if (state.discoveredGateways.isNotEmpty()) {
-                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 110.dp)) {
-                        items(state.discoveredGateways) { gw ->
-                            OutlinedButton(
-                                onClick = {
-                                    host = gw.host
-                                    portText = gw.port.toString()
-                                    if (gw.host == "127.0.0.1") controller.connectSimulator()
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("${gw.name} (${gw.host}:${gw.port}) [${gw.individualAddress ?: "-"}]")
+                    Surface(
+                        color = WorkbenchColors.BgCanvas,
+                        shape = RoundedCornerShape(5.dp),
+                        border = BorderStroke(1.dp, WorkbenchColors.BorderSubtle),
+                    ) {
+                        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 110.dp).padding(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            items(state.discoveredGateways) { gw ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(WorkbenchColors.BgHeader)
+                                        .border(1.dp, WorkbenchColors.BorderSubtle, RoundedCornerShape(4.dp))
+                                        .clickable {
+                                            host = gw.host
+                                            portText = gw.port.toString()
+                                            if (gw.host == "127.0.0.1") controller.connectSimulator()
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(gw.name, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = WorkbenchColors.TextPrimary)
+                                    Text("${gw.host}:${gw.port} [${gw.individualAddress ?: "-"}]", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = WorkbenchColors.AccentSky)
+                                }
                             }
                         }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("Gateway Host / IP") }, singleLine = true, modifier = Modifier.weight(0.7f))
-                    OutlinedTextField(value = portText, onValueChange = { portText = it }, label = { Text("Port") }, singleLine = true, modifier = Modifier.weight(0.3f))
+                    CompactInputField(value = host, onValueChange = { host = it }, prefixLabel = "Host", modifier = Modifier.weight(0.7f))
+                    CompactInputField(value = portText, onValueChange = { portText = it }, prefixLabel = "Port", modifier = Modifier.weight(0.3f))
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = useNat, onCheckedChange = { useNat = it })
-                    Text("Enable NAT Mode (Route-Back)")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.clickable { useNat = !useNat },
+                ) {
+                    Checkbox(checked = useNat, onCheckedChange = { useNat = it }, modifier = Modifier.size(18.dp))
+                    Text("Enable NAT / Route-Back Mode (VPN or Docker subnets)", fontSize = 11.sp, color = WorkbenchColors.TextSecondary)
                 }
-                OutlinedTextField(value = secureUserPwd, onValueChange = { secureUserPwd = it }, label = { Text("KNX IP Secure User Password (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = secureAuthCode, onValueChange = { secureAuthCode = it }, label = { Text("Device Auth Code (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                CompactInputField(
+                    value = secureUserPwd,
+                    onValueChange = { secureUserPwd = it },
+                    prefixLabel = "IP Secure Pwd",
+                    placeholder = "Optional KNX IP Secure user password",
+                    monospace = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                CompactInputField(
+                    value = secureAuthCode,
+                    onValueChange = { secureAuthCode = it },
+                    prefixLabel = "Auth Code",
+                    placeholder = "Optional device authentication code",
+                    monospace = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         },
         confirmButton = {
-            Button(onClick = { controller.connectTunneling(host, portText.toIntOrNull() ?: 3671, useNat, secureUserPwd, secureAuthCode) }) {
-                Text("Connect Tunneling")
-            }
+            DesktopPrimaryButton(
+                text = "Connect Tunneling",
+                icon = Icons.Default.Router,
+                color = WorkbenchColors.AccentSky,
+                onClick = { controller.connectTunneling(host, portText.toIntOrNull() ?: 3671, useNat, secureUserPwd, secureAuthCode) },
+            )
         },
         dismissButton = {
-            TextButton(onClick = { controller.toggleConnectDialog(false) }) {
-                Text("Close")
-            }
-        }
+            DesktopButton(text = "Close", onClick = { controller.toggleConnectDialog(false) })
+        },
     )
 }

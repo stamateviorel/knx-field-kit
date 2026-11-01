@@ -1,12 +1,28 @@
 package dev.knxfieldkit.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -40,96 +56,242 @@ fun pickSaveFile(title: String, defaultName: String): File? {
 @Composable
 fun KnxFieldKitApp(controller: AppController) {
     val state by controller.uiState.collectAsState()
-    val connectionStatus = when (val cs = state.connectionState) {
-        is ConnectionState.Connected -> "ONLINE: ${cs.description}"
-        is ConnectionState.Connecting -> "CONNECTING..."
-        is ConnectionState.Error -> "ERROR: ${cs.message}"
-        ConnectionState.Disconnected -> "OFFLINE"
+    val isConnected = state.connectionState is ConnectionState.Connected
+    val connectionLabel = when (val cs = state.connectionState) {
+        is ConnectionState.Connected -> cs.description
+        is ConnectionState.Connecting -> "Connecting..."
+        is ConnectionState.Error -> "Bus Error"
+        ConnectionState.Disconnected -> "Bus Disconnected"
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(modifier = Modifier.fillMaxSize(), color = WorkbenchColors.BgCanvas) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Surface(tonalElevation = 4.dp) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+            // Top ETS6-Style IDE Workbench Bar (42dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(42.dp)
+                    .background(WorkbenchColors.BgPanel)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // Brand Emblem + Title
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(WorkbenchColors.AccentEmerald.copy(alpha = 0.20f))
+                            .border(1.dp, WorkbenchColors.AccentEmerald, RoundedCornerShape(5.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Hub,
+                            contentDescription = null,
+                            tint = WorkbenchColors.AccentEmerald,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
                     Column {
-                        Text("KNX Field Kit", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "Drop any .knxproj / .knxkeys onto window • ETS4/5/6 Unlocker • Live Bus & Commissioning",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "KNX FIELD KIT",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = WorkbenchColors.TextPrimary,
+                        )
+                        Text(
+                            text = "ETS4/5/6 Unlocker · Bus Workbench",
+                            fontSize = 9.sp,
+                            color = WorkbenchColors.TextMuted,
                         )
                     }
-                    Spacer(modifier = Modifier.weight(1f))
-                    OutlinedButton(
-                        onClick = {
-                            controller.selectTab(AppTab.DIAGNOSTICS)
-                            controller.runFullSiteCheck()
-                        },
-                        enabled = !state.isRunningFullSiteCheck,
-                    ) {
-                        Text(if (state.isRunningFullSiteCheck) "Checking Site..." else "1-Click Site Check")
-                    }
+                }
+
+                Box(modifier = Modifier.width(1.dp).height(22.dp).background(WorkbenchColors.BorderSubtle))
+
+                // Active Project Pill
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(WorkbenchColors.BgCanvas)
+                        .border(1.dp, WorkbenchColors.BorderSubtle, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Default.FolderSpecial, contentDescription = null, tint = WorkbenchColors.AccentSky, modifier = Modifier.size(13.dp))
                     Text(
-                        text = connectionStatus,
-                        color = if (state.connectionState is ConnectionState.Connected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.tertiary
-                        },
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = state.projectSourceLabel,
+                        fontSize = 11.sp,
+                        color = WorkbenchColors.TextSecondary,
+                        maxLines = 1,
                     )
-                    if (state.connectionState is ConnectionState.Connected) {
-                        OutlinedButton(onClick = controller::disconnectBus) { Text("Disconnect") }
-                    } else {
-                        Button(onClick = controller::connectSimulator) { Text("Quick Start Virtual Bus") }
-                    }
-                    OutlinedButton(onClick = { controller.toggleConnectDialog(true) }) {
-                        Text("Gateways / IP Connect...")
-                    }
                 }
-            }
 
+                Spacer(modifier = Modifier.weight(1f))
+
+                // 1-Click Full Site Health Check
+                DesktopButton(
+                    text = if (state.isRunningFullSiteCheck) "Auditing Site..." else "1-Click Site Check",
+                    icon = Icons.Default.Verified,
+                    onClick = {
+                        controller.selectTab(AppTab.DIAGNOSTICS)
+                        controller.runFullSiteCheck()
+                    },
+                    enabled = !state.isRunningFullSiteCheck,
+                    active = state.siteCheckReport != null,
+                    accentColor = WorkbenchColors.AccentEmerald,
+                )
+
+                // Connection Status Indicator Pill
+                Row(
+                    modifier = Modifier
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(WorkbenchColors.BgCanvas)
+                        .border(
+                            1.dp,
+                            if (isConnected) WorkbenchColors.AccentEmerald.copy(alpha = 0.55f) else WorkbenchColors.BorderSubtle,
+                            RoundedCornerShape(4.dp),
+                        )
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(if (isConnected) WorkbenchColors.AccentEmerald else WorkbenchColors.AccentAmber),
+                    )
+                    Text(
+                        text = connectionLabel,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (isConnected) WorkbenchColors.AccentEmerald else WorkbenchColors.TextSecondary,
+                        maxLines = 1,
+                    )
+                }
+
+                if (isConnected) {
+                    DesktopButton(
+                        text = "Disconnect",
+                        icon = Icons.Default.LinkOff,
+                        onClick = controller::disconnectBus,
+                    )
+                } else {
+                    DesktopPrimaryButton(
+                        text = "Start Virtual Bus",
+                        icon = Icons.Default.Bolt,
+                        onClick = controller::connectSimulator,
+                    )
+                }
+                DesktopButton(
+                    text = "Gateways...",
+                    icon = Icons.Default.Router,
+                    onClick = { controller.toggleConnectDialog(true) },
+                )
+            }
+            HorizontalDivider(thickness = 1.dp, color = WorkbenchColors.BorderSubtle)
+
+            // Walk-Test Banner (when active)
             if (state.walkTestActive) {
-                Surface(color = MaterialTheme.colorScheme.tertiary) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .background(WorkbenchColors.AccentAmber.copy(alpha = 0.18f))
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Default.FlashOn, contentDescription = null, tint = WorkbenchColors.AccentAmber, modifier = Modifier.size(14.dp))
                         Text(
-                            text = "WALK-TEST CIRCUIT BLINKER ACTIVE on ${state.walkTestGroupAddress} — Toggle #${state.walkTestStepCount} (walk to room to locate circuit)",
-                            color = MaterialTheme.colorScheme.background,
-                            style = MaterialTheme.typography.labelLarge,
+                            text = "WALK-TEST BLINKER ACTIVE on ${state.walkTestGroupAddress} — Toggle #${state.walkTestStepCount} (walk to room to verify circuit)",
+                            color = WorkbenchColors.AccentAmber,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
-                        Button(onClick = controller::stopWalkTestBlink) {
-                            Text("Stop Walk-Test")
-                        }
                     }
+                    DesktopPrimaryButton(
+                        text = "Stop Blinker",
+                        onClick = controller::stopWalkTestBlink,
+                        color = WorkbenchColors.AccentAmber,
+                        compact = true,
+                    )
                 }
+                HorizontalDivider(thickness = 1.dp, color = WorkbenchColors.AccentAmber.copy(alpha = 0.45f))
             }
 
+            // Main Workspace Area: Slim Vector Activity Bar + Active Screen
             Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                NavigationRail {
+                // Slim 64dp IDE Activity Bar
+                Column(
+                    modifier = Modifier
+                        .width(64.dp)
+                        .fillMaxHeight()
+                        .background(WorkbenchColors.BgPanel)
+                        .padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     AppTab.entries.forEach { tab ->
-                        val shortBadge = when (tab) {
-                            AppTab.PROJECT -> "PRJ"
-                            AppTab.MONITOR -> "MON"
-                            AppTab.SENDER -> "SND"
-                            AppTab.DIAGNOSTICS -> "TST"
+                        val selected = state.activeTab == tab
+                        val icon = when (tab) {
+                            AppTab.PROJECT -> Icons.Default.AccountTree
+                            AppTab.MONITOR -> Icons.Default.Terminal
+                            AppTab.SENDER -> Icons.Default.Send
+                            AppTab.DIAGNOSTICS -> Icons.Default.BuildCircle
                         }
-                        NavigationRailItem(
-                            selected = state.activeTab == tab,
-                            onClick = { controller.selectTab(tab) },
-                            icon = { Text(shortBadge, fontFamily = FontFamily.Monospace) },
-                            label = { Text(tab.title) },
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .clickable { controller.selectTab(tab) },
+                        ) {
+                            if (selected) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(32.dp)
+                                        .align(Alignment.CenterStart)
+                                        .clip(RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp))
+                                        .background(WorkbenchColors.AccentSky),
+                                )
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 4.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (selected) WorkbenchColors.BgSelected.copy(alpha = 0.70f) else Color.Transparent),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = tab.title,
+                                    tint = if (selected) WorkbenchColors.AccentSky else WorkbenchColors.TextMuted,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    text = tab.title,
+                                    fontSize = 9.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (selected) WorkbenchColors.TextPrimary else WorkbenchColors.TextMuted,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
                     }
                 }
-                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(12.dp)) {
+                VerticalDivider(thickness = 1.dp, color = WorkbenchColors.BorderSubtle)
+
+                // Active Screen Content
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(8.dp)) {
                     when (state.activeTab) {
                         AppTab.PROJECT -> ProjectExplorerScreen(
                             state = state,
@@ -155,19 +317,40 @@ fun KnxFieldKitApp(controller: AppController) {
                 }
             }
 
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(state.statusMessage, style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.weight(1f))
+            // Compact 24dp IDE Bottom Status Bar
+            HorizontalDivider(thickness = 1.dp, color = WorkbenchColors.BorderSubtle)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(24.dp)
+                    .background(WorkbenchColors.BgHeader)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = WorkbenchColors.AccentSky, modifier = Modifier.size(12.dp))
+                Text(
+                    text = state.statusMessage,
+                    fontSize = 11.sp,
+                    color = WorkbenchColors.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                state.siteCheckReport?.let { rep ->
                     Text(
-                        text = "Telegrams: ${state.telegrams.size}",
+                        text = "Readiness: ${rep.readinessScorePercent}%",
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
+                        color = WorkbenchColors.AccentEmerald,
                     )
                 }
+                Text(
+                    text = "Frames: ${state.telegrams.size}",
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = WorkbenchColors.TextSecondary,
+                )
             }
         }
     }
@@ -198,8 +381,8 @@ fun main(args: Array<String>) = application {
     DisposableEffect(Unit) { onDispose { controller.close() } }
     Window(
         onCloseRequest = ::exitApplication,
-        title = "KNX Field Kit — Project & Bus Diagnostics",
-        state = rememberWindowState(width = 1420.dp, height = 880.dp),
+        title = "KNX Field Kit — ETS4/5/6 Project Explorer & Bus Workbench",
+        state = rememberWindowState(width = 1480.dp, height = 920.dp),
     ) {
         DisposableEffect(window) {
             val dropTarget = DropTarget(window, object : DropTargetAdapter() {

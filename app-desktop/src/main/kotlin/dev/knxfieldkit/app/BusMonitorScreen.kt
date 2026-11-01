@@ -1,17 +1,29 @@
 package dev.knxfieldkit.app
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.knxfieldkit.model.*
 import java.time.Instant
 import java.time.ZoneId
@@ -47,275 +59,290 @@ fun BusMonitorScreen(state: AppUiState, controller: AppController, onExportCsv: 
         state.selectedMonitorTelegramId?.let { id -> state.telegrams.firstOrNull { it.telegram.id == id } }
     }
 
-    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // Live Bus Health & TP1 Load Strip
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val loadColor = when (health.loadLevel) {
-                    BusLoadLevel.IDLE -> MaterialTheme.colorScheme.secondary
-                    BusLoadLevel.HEALTHY -> Color(0xFF2ECC71)
-                    BusLoadLevel.ELEVATED -> Color(0xFFF59E0B)
-                    BusLoadLevel.STORM -> Color(0xFFEF4444)
-                }
-                Column {
-                    Text("TP1 Bus Rate & Load", style = MaterialTheme.typography.labelSmall)
-                    Text(
-                        text = String.format(Locale.US, "%.1f tel/s • %.0f%% TP1 (%s)", health.telegramsPerSecond, health.estimatedTp1LoadPercent, health.loadLevel.label),
-                        color = loadColor,
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Column {
-                    Text("Top Talker Device", style = MaterialTheme.typography.labelSmall)
-                    val topDev = health.topSourceDevices.firstOrNull()
-                    Text(
-                        text = topDev?.let { "${it.address} (${it.label}) ×${it.telegramCount}" } ?: "—",
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Column {
-                    Text("Unanswered Reads", style = MaterialTheme.typography.labelSmall)
-                    Text(
-                        text = if (health.unansweredReadAddresses.isEmpty()) "0 (All OK)" else "${health.unansweredReadAddresses.size}: ${health.unansweredReadAddresses.take(3).joinToString()}",
-                        color = if (health.unansweredReadAddresses.isEmpty()) Color(0xFF2ECC71) else Color(0xFFEF4444),
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Column {
-                    Text("Ghost GAs / Repeats", style = MaterialTheme.typography.labelSmall)
-                    Text(
-                        text = "${health.ghostGroupCount} Ghost • ${health.repeatedCount} Repeat",
-                        color = if (health.ghostGroupCount > 0 || health.repeatedCount > 0) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurface,
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 1. Sleek 4-Tile Bus Health & TP1 Telemetry Strip
+        Row(modifier = Modifier.fillMaxWidth().height(54.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val loadColor = when (health.loadLevel) {
+                BusLoadLevel.IDLE -> WorkbenchColors.AccentSky
+                BusLoadLevel.HEALTHY -> WorkbenchColors.AccentEmerald
+                BusLoadLevel.ELEVATED -> WorkbenchColors.AccentAmber
+                BusLoadLevel.STORM -> WorkbenchColors.AccentRed
             }
-        }
-
-        // Search & Filter Toolbar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = state.monitorSearchQuery,
-                onValueChange = controller::setMonitorSearch,
-                placeholder = { Text("Filter by address (1/1/1 or 1.1.10), device, GA name, APCI, or decoded value...") },
-                singleLine = true,
+            KpiStatTile(
+                label = "TP1 BUS RATE & LOAD",
+                value = String.format(Locale.US, "%.1f tel/s · %.0f%% TP1 (%s)", health.telegramsPerSecond, health.estimatedTp1LoadPercent, health.loadLevel.label),
+                valueColor = loadColor,
                 modifier = Modifier.weight(1f),
             )
-            FilterChip(
-                selected = state.monitorGhostOnly,
-                onClick = { controller.setMonitorGhostOnly(!state.monitorGhostOnly) },
-                label = { Text("Ghost GAs (${health.ghostGroupCount})") },
+            val topDev = health.topSourceDevices.firstOrNull()
+            KpiStatTile(
+                label = "TOP TALKER DEVICE",
+                value = topDev?.let { "${it.address} (${it.label}) ×${it.telegramCount}" } ?: "—",
+                valueColor = WorkbenchColors.TextPrimary,
+                modifier = Modifier.weight(1f),
             )
-            OutlinedButton(onClick = { controller.setMonitorPaused(!state.monitorPaused) }) {
-                Text(if (state.monitorPaused) "Resume" else "Pause")
-            }
-            OutlinedButton(onClick = controller::clearMonitorLog) {
-                Text("Clear")
-            }
-            Button(onClick = onExportCsv, enabled = state.telegrams.isNotEmpty()) {
-                Text("Export CSV")
-            }
+            KpiStatTile(
+                label = "UNANSWERED GROUP READS",
+                value = if (health.unansweredReadAddresses.isEmpty()) "0 (All Answered)" else "${health.unansweredReadAddresses.size}: ${health.unansweredReadAddresses.take(3).joinToString()}",
+                valueColor = if (health.unansweredReadAddresses.isEmpty()) WorkbenchColors.AccentEmerald else WorkbenchColors.AccentRed,
+                modifier = Modifier.weight(1f),
+            )
+            KpiStatTile(
+                label = "GHOST GAS & REPEATED FRAMES",
+                value = "${health.ghostGroupCount} Ghost · ${health.repeatedCount} Repeat",
+                valueColor = if (health.ghostGroupCount > 0 || health.repeatedCount > 0) WorkbenchColors.AccentAmber else WorkbenchColors.TextSecondary,
+                modifier = Modifier.weight(1f),
+            )
         }
 
-        // Split Table + Click-to-Inspect Telegram Drawer
-        Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Card(modifier = Modifier.weight(if (selectedTelegram != null) 0.68f else 1f).fillMaxHeight()) {
-                Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                        Text("Time", modifier = Modifier.width(96.dp), style = MaterialTheme.typography.labelMedium)
-                        Text("Source", modifier = Modifier.weight(0.24f), style = MaterialTheme.typography.labelMedium)
-                        Text("Destination", modifier = Modifier.weight(0.28f), style = MaterialTheme.typography.labelMedium)
-                        Text("Service", modifier = Modifier.width(120.dp), style = MaterialTheme.typography.labelMedium)
-                        Text("DPT", modifier = Modifier.width(56.dp), style = MaterialTheme.typography.labelMedium)
-                        Text("Decoded / Flags (Click row to inspect)", modifier = Modifier.weight(0.24f), style = MaterialTheme.typography.labelMedium)
-                    }
-                    HorizontalDivider()
-                    if (filteredTelegrams.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("No telegrams captured yet.")
-                                if (state.connectionState !is ConnectionState.Connected) {
-                                    Button(onClick = controller::connectSimulator) {
-                                        Text("Start Virtual KNX Bus Simulator")
-                                    }
-                                }
+        // 2. Main Split: Live CEMI Stream Table + Right Frame Inspector
+        Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            WorkbenchPanel(
+                title = "Live KNX Bus & Group Monitor",
+                icon = Icons.Default.Terminal,
+                badgeText = "${filteredTelegrams.size} / ${state.telegrams.size}",
+                modifier = Modifier.weight(if (selectedTelegram != null) 0.68f else 1f).fillMaxHeight(),
+                headerActions = {
+                    CompactSearchField(
+                        value = state.monitorSearchQuery,
+                        onValueChange = controller::setMonitorSearch,
+                        placeholder = "Filter source, GA, name, APCI, value...",
+                        modifier = Modifier.width(240.dp),
+                    )
+                    DesktopButton(
+                        text = "Ghost GAs (${health.ghostGroupCount})",
+                        icon = Icons.Default.WarningAmber,
+                        onClick = { controller.setMonitorGhostOnly(!state.monitorGhostOnly) },
+                        active = state.monitorGhostOnly,
+                        accentColor = WorkbenchColors.AccentAmber,
+                        compact = true,
+                    )
+                    DesktopButton(
+                        text = if (state.monitorPaused) "Resume" else "Pause",
+                        icon = if (state.monitorPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        onClick = { controller.setMonitorPaused(!state.monitorPaused) },
+                        active = state.monitorPaused,
+                        compact = true,
+                    )
+                    DesktopButton(
+                        text = "Clear",
+                        icon = Icons.Default.DeleteSweep,
+                        onClick = controller::clearMonitorLog,
+                        compact = true,
+                    )
+                    DesktopPrimaryButton(
+                        text = "Export CSV",
+                        icon = Icons.Default.Download,
+                        onClick = onExportCsv,
+                        enabled = state.telegrams.isNotEmpty(),
+                        color = WorkbenchColors.AccentSky,
+                        compact = true,
+                    )
+                },
+            ) {
+                DenseTableHeader(
+                    listOf(
+                        "Timestamp" to 0.12f,
+                        "Source Device" to 0.24f,
+                        "Destination" to 0.27f,
+                        "Service" to 0.11f,
+                        "DPT" to 0.08f,
+                        "Decoded Value & Flags" to 0.18f,
+                    )
+                )
+                if (filteredTelegrams.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("No KNX telegrams captured yet.", fontSize = 12.sp, color = WorkbenchColors.TextSecondary)
+                            if (state.connectionState !is ConnectionState.Connected) {
+                                DesktopPrimaryButton(
+                                    text = "Start Virtual KNX Bus Simulator",
+                                    icon = Icons.Default.Bolt,
+                                    onClick = controller::connectSimulator,
+                                )
                             }
                         }
-                    } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            items(filteredTelegrams, key = { it.telegram.id }) { row ->
-                                val t = row.telegram
-                                val dstAddr = t.destinationGroup?.toString() ?: t.destinationIndividual?.toString() ?: "broadcast"
-                                val isSelected = state.selectedMonitorTelegramId == t.id
-                                val apciBadge = when (t.apci) {
-                                    ApciType.GROUP_WRITE -> "WRITE" to Color(0xFF2ECC71)
-                                    ApciType.GROUP_READ -> "READ?" to Color(0xFF38BDF8)
-                                    ApciType.GROUP_RESPONSE -> "RESP" to Color(0xFF14B8A6)
-                                    ApciType.DEVICE_DESCRIPTOR_READ -> "DD0?" to Color(0xFFA78BFA)
-                                    ApciType.DEVICE_DESCRIPTOR_RESPONSE -> "DD0!" to Color(0xFFC084FC)
-                                    ApciType.INDIVIDUAL_ADDR_READ, ApciType.INDIVIDUAL_ADDR_RESPONSE -> "PROG" to Color(0xFFF59E0B)
-                                    ApciType.OTHER -> "MGMT" to Color(0xFF94A3B8)
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        itemsIndexed(filteredTelegrams, key = { _, r -> r.telegram.id }) { idx, row ->
+                            val t = row.telegram
+                            val dstAddr = t.destinationGroup?.toString() ?: t.destinationIndividual?.toString() ?: "broadcast"
+                            val isSelected = state.selectedMonitorTelegramId == t.id
+                            val (apciText, apciColor) = apciBadgeStyle(t.apci)
+                            val rowBg = when {
+                                isSelected -> WorkbenchColors.BgSelected
+                                idx % 2 == 1 -> WorkbenchColors.BgRowAlt
+                                else -> WorkbenchColors.BgPanel
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(28.dp)
+                                    .background(rowBg)
+                                    .clickable { controller.selectMonitorTelegram(if (isSelected) null else t.id) }
+                                    .padding(horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = MONITOR_TIME_FMT.format(Instant.ofEpochMilli(t.timestampEpochMs)),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = WorkbenchColors.TextMuted,
+                                    modifier = Modifier.weight(0.12f),
+                                )
+                                Text(
+                                    text = if (!row.sourceDeviceName.isNullOrBlank()) "${t.source} · ${row.sourceDeviceName}" else t.source.toString(),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = WorkbenchColors.TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(0.24f).padding(end = 6.dp),
+                                )
+                                Text(
+                                    text = if (!row.destinationName.isNullOrBlank()) "$dstAddr · ${row.destinationName}" else dstAddr,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (row.isUnmappedGroup) WorkbenchColors.AccentAmber else WorkbenchColors.AccentSky,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(0.27f).padding(end = 6.dp),
+                                )
+                                Box(modifier = Modifier.weight(0.11f)) {
+                                    StatusPill(apciText, apciColor)
                                 }
-                                Surface(
-                                    onClick = { controller.selectMonitorTelegram(if (isSelected) null else t.id) },
-                                    color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
-                                    shape = MaterialTheme.shapes.extraSmall,
+                                Box(modifier = Modifier.weight(0.08f)) {
+                                    DptBadge(row.dptId)
+                                }
+                                Row(
+                                    modifier = Modifier.weight(0.18f),
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            text = MONITOR_TIME_FMT.format(Instant.ofEpochMilli(t.timestampEpochMs)),
-                                            modifier = Modifier.width(96.dp),
-                                            fontFamily = FontFamily.Monospace,
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                        Text(
-                                            text = if (!row.sourceDeviceName.isNullOrBlank()) "${t.source} (${row.sourceDeviceName})" else t.source.toString(),
-                                            modifier = Modifier.weight(0.24f),
-                                            fontFamily = FontFamily.Monospace,
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                        Text(
-                                            text = if (!row.destinationName.isNullOrBlank()) "$dstAddr (${row.destinationName})" else dstAddr,
-                                            modifier = Modifier.weight(0.28f),
-                                            fontFamily = FontFamily.Monospace,
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                        Text(
-                                            text = apciBadge.first,
-                                            color = apciBadge.second,
-                                            modifier = Modifier.width(120.dp),
-                                            fontFamily = FontFamily.Monospace,
-                                            style = MaterialTheme.typography.labelMedium,
-                                        )
-                                        Text(
-                                            text = row.dptId ?: "-",
-                                            modifier = Modifier.width(56.dp),
-                                            fontFamily = FontFamily.Monospace,
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                        Row(
-                                            modifier = Modifier.weight(0.24f),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(
-                                                text = row.decodedValue.ifBlank { "—" },
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontFamily = FontFamily.Monospace,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                            )
-                                            if (row.isUnmappedGroup) {
-                                                Text(
-                                                    text = "[GHOST]",
-                                                    color = Color(0xFFF59E0B),
-                                                    fontFamily = FontFamily.Monospace,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                )
-                                            }
-                                            if (t.repeated) {
-                                                Text(
-                                                    text = "[RPT]",
-                                                    color = MaterialTheme.colorScheme.error,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                )
-                                            }
-                                        }
+                                    Text(
+                                        text = row.decodedValue.ifBlank { "—" },
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = WorkbenchColors.AccentEmerald,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (row.isUnmappedGroup) {
+                                        StatusPill("GHOST", WorkbenchColors.AccentAmber)
+                                    }
+                                    if (t.repeated) {
+                                        StatusPill("RPT", WorkbenchColors.AccentRed)
                                     }
                                 }
                             }
+                            HorizontalDivider(thickness = 1.dp, color = WorkbenchColors.BorderSubtle.copy(alpha = 0.35f))
                         }
                     }
                 }
             }
 
-            // Right-Hand Telegram Inspector & 1-Click Replay Panel
+            // Right CEMI Frame Inspector & 1-Click Replay Panel
             if (selectedTelegram != null) {
                 val t = selectedTelegram.telegram
                 val dstGroup = t.destinationGroup
                 val srcDev = state.project?.findDevice(t.source)
                 val gaInfo = dstGroup?.let { state.project?.findGroupAddress(it) }
-                Card(modifier = Modifier.weight(0.32f).fillMaxHeight()) {
+
+                WorkbenchPanel(
+                    title = "Frame #${t.id} Inspector",
+                    icon = Icons.Default.DataObject,
+                    modifier = Modifier.weight(0.32f).fillMaxHeight(),
+                    headerActions = {
+                        DesktopButton("Close", onClick = { controller.selectMonitorTelegram(null) }, compact = true)
+                    },
+                ) {
                     Column(
-                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("Telegram #${t.id}", style = MaterialTheme.typography.titleMedium)
-                            TextButton(onClick = { controller.selectMonitorTelegram(null) }) { Text("Close") }
-                        }
-                        HorizontalDivider()
-                        Text("Service: ${t.apci.label} (${t.priority}, Hop=${t.hopCount})", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                        Text("Source: ${t.source} — ${srcDev?.name ?: "Unknown Device"}", style = MaterialTheme.typography.bodyMedium)
+                        PropertyKeyValueRow("Timestamp", MONITOR_TIME_FMT.format(Instant.ofEpochMilli(t.timestampEpochMs)), monospace = true)
+                        PropertyKeyValueRow("APCI Service", "${t.apci.label} (${t.priority}, Hop=${t.hopCount})", monospace = true)
+                        PropertyKeyValueRow("Source IA", "${t.source} — ${srcDev?.name ?: "Unknown Device"}", WorkbenchColors.AccentSky)
                         srcDev?.let {
-                            val loc = state.project?.findDeviceLocationPath(it.address) ?: "Unassigned Room"
-                            Text("Room: $loc • ${it.manufacturerName} ${it.productName}", style = MaterialTheme.typography.bodySmall)
+                            PropertyKeyValueRow("Location", state.project?.findDeviceLocationPath(it.address) ?: "Unassigned")
+                            PropertyKeyValueRow("Hardware", "${it.manufacturerName} ${it.productName}")
                         }
                         if (dstGroup != null) {
-                            Text("Destination GA: $dstGroup — ${gaInfo?.name ?: "Unmapped Ghost GA"}", style = MaterialTheme.typography.bodyMedium)
-                            Text("Decoded (${selectedTelegram.dptId ?: "raw"}): ${selectedTelegram.decodedValue.ifBlank { "—" }}", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
+                            PropertyKeyValueRow("Group Addr", "$dstGroup — ${gaInfo?.name ?: "Unmapped Ghost GA"}", WorkbenchColors.AccentEmerald)
+                            PropertyKeyValueRow("Decoded (${selectedTelegram.dptId ?: "raw"})", selectedTelegram.decodedValue.ifBlank { "—" }, WorkbenchColors.AccentEmerald, monospace = true)
                         } else if (t.destinationIndividual != null) {
-                            Text("Target Device: ${t.destinationIndividual}", style = MaterialTheme.typography.bodyMedium)
+                            PropertyKeyValueRow("Target IA", t.destinationIndividual.toString(), monospace = true)
                         }
-                        Text("Payload Hex: ${HexBytes.toHex(t.payload).ifBlank { "(empty)" }}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                        PropertyKeyValueRow("Payload Hex", HexBytes.toHex(t.payload).ifBlank { "(empty)" }, monospace = true)
                         if (t.rawFrameHex.isNotBlank()) {
-                            Text("Raw CEMI: ${t.rawFrameHex}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                            PropertyKeyValueRow("Raw CEMI", t.rawFrameHex, monospace = true)
                         }
 
-                        HorizontalDivider()
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        HorizontalDivider(color = WorkbenchColors.BorderSubtle)
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             if (dstGroup != null) {
-                                Button(onClick = { controller.replayTelegram(t) }) {
-                                    Text("Replay Telegram")
-                                }
-                                OutlinedButton(onClick = { controller.readGroupAddress(dstGroup.toString()) }) {
-                                    Text("Poll GA")
-                                }
+                                DesktopPrimaryButton(
+                                    text = "Replay Frame",
+                                    icon = Icons.Default.Replay,
+                                    onClick = { controller.replayTelegram(t) },
+                                    compact = true,
+                                )
+                                DesktopButton(
+                                    text = "Poll GA",
+                                    icon = Icons.Default.Sync,
+                                    onClick = { controller.readGroupAddress(dstGroup.toString()) },
+                                    compact = true,
+                                )
+                                DesktopButton(
+                                    text = "In Explorer",
+                                    onClick = {
+                                        controller.inspectGroupInExplorer(dstGroup)
+                                        controller.selectExplorerNode(ExplorerSelection.AllGroupAddresses)
+                                        controller.selectTab(AppTab.PROJECT)
+                                    },
+                                    compact = true,
+                                )
                             }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(onClick = { controller.pingIndividualDevice(t.source.toString()) }) {
-                                Text("Ping ${t.source}")
-                            }
-                            if (dstGroup != null) {
-                                TextButton(onClick = {
-                                    controller.inspectGroupInExplorer(dstGroup)
-                                    controller.selectTab(AppTab.PROJECT)
-                                }) {
-                                    Text("Show in Project")
-                                }
-                            }
+                            DesktopButton(
+                                text = "Ping ${t.source}",
+                                onClick = { controller.pingIndividualDevice(t.source.toString()) },
+                                compact = true,
+                            )
                         }
 
                         if (gaInfo != null && gaInfo.linkedObjects.isNotEmpty()) {
-                            HorizontalDivider()
-                            Text("Linked Devices on ${gaInfo.address}:", style = MaterialTheme.typography.labelLarge)
+                            HorizontalDivider(color = WorkbenchColors.BorderSubtle)
+                            Text(
+                                text = "LINKED COMOBJECTS ON ${gaInfo.address} (${gaInfo.linkedObjects.size})",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = WorkbenchColors.TextMuted,
+                            )
                             gaInfo.linkedObjects.forEach { link ->
-                                val devName = link.deviceAddress?.let { state.project?.findDevice(it)?.name } ?: ""
-                                Text(
-                                    text = "• ${link.deviceAddress ?: "?"} $devName — ${link.name}",
-                                    fontFamily = FontFamily.Monospace,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                                val devName = link.deviceAddress?.let { state.project?.findDevice(it)?.name }.orEmpty()
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(WorkbenchColors.BgCanvas, RoundedCornerShape(4.dp))
+                                        .clickable {
+                                            link.deviceAddress?.let {
+                                                controller.openDeviceObjectsInExplorer(it)
+                                                controller.selectTab(AppTab.PROJECT)
+                                            }
+                                        }
+                                        .padding(6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("${link.deviceAddress ?: "?"} · $devName", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = WorkbenchColors.AccentSky, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("#${link.objectNumber ?: 0} ${link.name}", fontSize = 10.sp, color = WorkbenchColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    ComFlagsBadges(link.flags)
+                                }
                             }
                         }
                     }
@@ -323,4 +350,40 @@ fun BusMonitorScreen(state: AppUiState, controller: AppController, onExportCsv: 
             }
         }
     }
+}
+
+@Composable
+private fun KpiStatTile(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxHeight(),
+        color = WorkbenchColors.BgPanel,
+        shape = RoundedCornerShape(6.dp),
+        border = BorderStroke(1.dp, WorkbenchColors.BorderSubtle),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = WorkbenchColors.TextMuted, maxLines = 1)
+            Text(
+                text = value,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                color = valueColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+internal fun apciBadgeStyle(apci: ApciType): Pair<String, Color> = when (apci) {
+    ApciType.GROUP_WRITE -> "WRITE" to WorkbenchColors.AccentEmerald
+    ApciType.GROUP_READ -> "READ?" to WorkbenchColors.AccentSky
+    ApciType.GROUP_RESPONSE -> "RESP" to WorkbenchColors.AccentTeal
+    ApciType.DEVICE_DESCRIPTOR_READ -> "DD0?" to WorkbenchColors.AccentPurple
+    ApciType.DEVICE_DESCRIPTOR_RESPONSE -> "DD0!" to WorkbenchColors.AccentPurple
+    ApciType.INDIVIDUAL_ADDR_READ, ApciType.INDIVIDUAL_ADDR_RESPONSE -> "PROG" to WorkbenchColors.AccentAmber
+    ApciType.OTHER -> "MGMT" to WorkbenchColors.TextSecondary
 }

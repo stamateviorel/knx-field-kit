@@ -55,10 +55,32 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 enum class AppTab(val title: String) {
-    PROJECT("Project (.knxproj)"),
-    MONITOR("Live Bus Monitor"),
-    SENDER("Send & Poll"),
-    DIAGNOSTICS("Field Tests"),
+    PROJECT("Explorer"),
+    MONITOR("Bus Monitor"),
+    SENDER("Telegrams"),
+    DIAGNOSTICS("Diagnostics"),
+}
+
+enum class ExplorerTreeMode(val label: String) {
+    DUAL_SPLIT("Split"),
+    TOPOLOGY("Topology"),
+    GROUP_ADDRESSES("Groups"),
+    BUILDING("Rooms"),
+}
+
+sealed interface ExplorerSelection {
+    data object TopologyRoot : ExplorerSelection
+    data class Area(val area: Int) : ExplorerSelection
+    data class Line(val area: Int, val line: Int) : ExplorerSelection
+    data class Device(val address: IndividualAddress) : ExplorerSelection
+    data object AllGroupAddresses : ExplorerSelection
+    data class GroupRange(val rangeId: String) : ExplorerSelection
+    data class BuildingSpace(
+        val path: String,
+        val name: String,
+        val type: String,
+        val deviceAddresses: List<IndividualAddress>,
+    ) : ExplorerSelection
 }
 
 data class PasswordPromptState(
@@ -96,6 +118,10 @@ data class AppUiState(
     val groupLiveValues: Map<GroupAddress, GroupValueEntry> = emptyMap(),
     val deviceStatuses: Map<IndividualAddress, DevicePingResult> = emptyMap(),
     val explorerLocationView: Boolean = false,
+    val explorerTreeMode: ExplorerTreeMode = ExplorerTreeMode.DUAL_SPLIT,
+    val explorerSelection: ExplorerSelection = ExplorerSelection.TopologyRoot,
+    val showExplorerBottomMonitor: Boolean = true,
+    val showExplorerRightInspector: Boolean = true,
     val selectedDeviceAddress: IndividualAddress? = IndividualAddress(1, 1, 10),
     val selectedInspectorGroup: GroupAddress? = null,
     val selectedGroupAddressInput: String = "1/1/1",
@@ -297,7 +323,55 @@ class AppController(
     }
 
     fun setExplorerLocationView(byRoom: Boolean) {
-        _uiState.update { it.copy(explorerLocationView = byRoom) }
+        _uiState.update {
+            it.copy(
+                explorerLocationView = byRoom,
+                explorerTreeMode = if (byRoom) ExplorerTreeMode.BUILDING else ExplorerTreeMode.DUAL_SPLIT,
+            )
+        }
+    }
+
+    fun setExplorerTreeMode(mode: ExplorerTreeMode) {
+        _uiState.update {
+            it.copy(
+                explorerTreeMode = mode,
+                explorerLocationView = mode == ExplorerTreeMode.BUILDING,
+            )
+        }
+    }
+
+    fun selectExplorerNode(selection: ExplorerSelection) {
+        _uiState.update { st ->
+            when (selection) {
+                is ExplorerSelection.Device -> st.copy(
+                    explorerSelection = selection,
+                    selectedDeviceAddress = selection.address,
+                    selectedInspectorGroup = null,
+                )
+                is ExplorerSelection.GroupRange, ExplorerSelection.AllGroupAddresses -> st.copy(
+                    explorerSelection = selection,
+                )
+                else -> st.copy(explorerSelection = selection)
+            }
+        }
+    }
+
+    fun openDeviceObjectsInExplorer(address: IndividualAddress) {
+        _uiState.update {
+            it.copy(
+                explorerSelection = ExplorerSelection.Device(address),
+                selectedDeviceAddress = address,
+                selectedInspectorGroup = null,
+            )
+        }
+    }
+
+    fun toggleExplorerBottomMonitor() {
+        _uiState.update { it.copy(showExplorerBottomMonitor = !it.showExplorerBottomMonitor) }
+    }
+
+    fun toggleExplorerRightInspector() {
+        _uiState.update { it.copy(showExplorerRightInspector = !it.showExplorerRightInspector) }
     }
 
     fun inspectDeviceInExplorer(address: IndividualAddress) {
@@ -331,6 +405,7 @@ class AppController(
                 projectSourceLabel = label,
                 recentFiles = updatedRecent ?: it.recentFiles,
                 passwordPrompt = null,
+                explorerSelection = ExplorerSelection.TopologyRoot,
                 selectedGroupAddressInput = firstGa,
                 selectedDeviceAddress = firstDev,
                 selectedInspectorGroup = null,

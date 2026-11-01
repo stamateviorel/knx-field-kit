@@ -16,6 +16,7 @@ dependencies {
     implementation(project(":core-bus"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.swing)
     runtimeOnly(libs.slf4j.simple)

@@ -3,6 +3,7 @@ package dev.knxfieldkit.app
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import dev.knxfieldkit.model.ConnectionState
+import dev.knxfieldkit.model.GroupAddress
 import dev.knxfieldkit.model.IndividualAddress
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -25,7 +26,6 @@ class AppControllerTest {
             val sampleFile = File(tmpDir, "penthouse_ets6.knxproj")
             controller.generateAndPromptEncryptedSample(sampleFile, samplePassword = "fieldPass!99")
 
-            // Wait until controller detects password protection and opens prompt
             var attempts = 0
             while (controller.uiState.value.passwordPrompt == null && attempts < 50) {
                 delay(50L)
@@ -33,7 +33,6 @@ class AppControllerTest {
             }
             assertNotNull(controller.uiState.value.passwordPrompt, "Expected password prompt for ETS6 encrypted .knxproj")
 
-            // Wrong password keeps prompt open with error message
             controller.submitFilePassword("wrong-password")
             attempts = 0
             while (controller.uiState.value.passwordPrompt?.errorMessage == null && attempts < 50) {
@@ -42,7 +41,6 @@ class AppControllerTest {
             }
             assertNotNull(controller.uiState.value.passwordPrompt?.errorMessage)
 
-            // Correct password unlocks project and closes prompt
             controller.submitFilePassword("fieldPass!99")
             attempts = 0
             while (controller.uiState.value.passwordPrompt != null && attempts < 50) {
@@ -52,8 +50,8 @@ class AppControllerTest {
             assertNull(controller.uiState.value.passwordPrompt)
             assertEquals("Encrypted Penthouse ETS6 Sample", controller.uiState.value.project?.name)
             assertTrue(controller.uiState.value.project?.passwordProtected == true)
+            assertTrue(controller.uiState.value.project?.effectiveGroupRanges?.isNotEmpty() == true)
 
-            // Connect simulator and run Line 1.1 audit
             controller.connectSimulator()
             attempts = 0
             while (controller.uiState.value.connectionState !is ConnectionState.Connected && attempts < 40) {
@@ -81,11 +79,11 @@ class AppControllerTest {
 
     @OptIn(ExperimentalComposeUiApi::class)
     @Test
-    fun allFourComposeTabsAndDialogsRenderCleanly() = runBlocking {
+    fun allFourComposeTabsAndEtsExplorerModesRenderCleanly() = runBlocking {
         val controller = AppController()
         val tmpReportDir = Files.createTempDirectory("html-rep-").toFile()
         val screenshotDir = System.getProperty("knx.screenshot.dir")?.let(::File)?.apply { mkdirs() }
-        val scene = ImageComposeScene(width = 1420, height = 880) {
+        val scene = ImageComposeScene(width = 1480, height = 920) {
             KnxFieldKitTheme {
                 KnxFieldKitApp(controller)
             }
@@ -93,14 +91,22 @@ class AppControllerTest {
         try {
             controller.runFullSiteCheck()
             var attempts = 0
-            while (controller.uiState.value.siteCheckReport == null && attempts < 140) {
+            while (controller.uiState.value.siteCheckReport == null && attempts < 180) {
                 delay(50L)
                 attempts++
             }
             val siteReport = controller.uiState.value.siteCheckReport
             assertNotNull(siteReport, "Expected One-Click Full Site Check report to complete")
-            assertEquals(5, siteReport.onlineDevices)
+            assertEquals(9, siteReport.onlineDevices)
             assertEquals(1, siteReport.unreachableDevices.size)
+
+            // Also run Line 1.1 audit so Line 1.1 shows fault entry in Diagnostics
+            controller.runProjectLineAudit(1, 1)
+            attempts = 0
+            while (controller.uiState.value.isAuditingLine && attempts < 60) {
+                delay(40L)
+                attempts++
+            }
 
             val htmlFile = File(tmpReportDir, "commissioning.html")
             controller.exportHtmlCommissioningReport(htmlFile)
@@ -112,7 +118,6 @@ class AppControllerTest {
             assertTrue(htmlFile.isFile)
             assertTrue(htmlFile.readText().contains("Site Readiness Score"))
 
-            // Select a telegram in BusMonitor so the right-hand Telegram Inspector & Replay drawer renders too
             val firstTelId = controller.uiState.value.telegrams.firstOrNull()?.telegram?.id
             controller.selectMonitorTelegram(firstTelId)
             controller.pingIndividualDevice("1.1.10")
@@ -120,35 +125,62 @@ class AppControllerTest {
             delay(80L)
 
             var clockNs = 1_000_000_000L
-            for (tab in AppTab.entries) {
-                controller.selectTab(tab)
-                delay(40L)
+
+            fun renderAndSave(fileName: String) {
                 scene.render(clockNs)
-                clockNs += 350_000_000L
+                clockNs += 300_000_000L
                 val image = scene.render(clockNs)
                 clockNs += 50_000_000L
-                assertEquals(1420, image.width)
-                assertEquals(880, image.height)
+                assertEquals(1480, image.width)
+                assertEquals(920, image.height)
                 if (screenshotDir != null) {
                     val pngBytes = image.encodeToData(EncodedImageFormat.PNG)?.bytes
                     assertNotNull(pngBytes)
-                    File(screenshotDir, "knx-field-kit-v2-${tab.name.lowercase()}.png").writeBytes(pngBytes)
+                    File(screenshotDir, fileName).writeBytes(pngBytes)
                 }
             }
 
-            // Also render Project Explorer in Group Address Cross-Reference Inspector mode + Rooms view
+            // 1. ETS Explorer — Topology Devices Grid + Device Inspector + Docked Live Monitor
+            controller.selectTab(AppTab.PROJECT)
+            controller.selectExplorerNode(ExplorerSelection.TopologyRoot)
+            controller.inspectDeviceInExplorer(IndividualAddress(1, 1, 10))
+            delay(50L)
+            renderAndSave("knx-v3-explorer-topology.png")
+
+            // 2. ETS Explorer — Device Group Objects (C R W T U Flags) Grid!
+            controller.openDeviceObjectsInExplorer(IndividualAddress(1, 1, 20))
+            delay(50L)
+            renderAndSave("knx-v3-explorer-device-objects.png")
+
+            // 3. ETS Explorer — Group Range Folder + Group Address Cross-Reference Inspector!
+            controller.selectExplorerNode(ExplorerSelection.GroupRange("gr-lighting"))
+            controller.inspectGroupInExplorer(GroupAddress.parse("1/1/1"))
+            delay(50L)
+            renderAndSave("knx-v3-explorer-groups.png")
+
+            // 4. Bus Monitor, Sender, & Field Diagnostics
+            controller.selectTab(AppTab.MONITOR)
+            delay(40L)
+            renderAndSave("knx-v3-monitor.png")
+
+            controller.selectTab(AppTab.SENDER)
+            delay(40L)
+            renderAndSave("knx-v3-sender.png")
+
+            controller.selectTab(AppTab.DIAGNOSTICS)
+            delay(40L)
+            renderAndSave("knx-v3-diagnostics.png")
+
+            // 5. Building Rooms Tree + Connect Gateway Dialog smoke render
             controller.selectTab(AppTab.PROJECT)
             controller.setExplorerLocationView(true)
-            controller.inspectGroupInExplorer(dev.knxfieldkit.model.GroupAddress.parse("1/1/1"))
             delay(40L)
-            val gaInspImg = scene.render(clockNs + 300_000_000L)
-            assertEquals(1420, gaInspImg.width)
+            scene.render(clockNs + 200_000_000L)
 
-            // Render Gateway Connect Dialog as well
             controller.toggleConnectDialog(true)
             delay(40L)
-            val dlgImg = scene.render(clockNs + 600_000_000L)
-            assertEquals(1420, dlgImg.width)
+            val dlgImg = scene.render(clockNs + 500_000_000L)
+            assertEquals(1480, dlgImg.width)
         } finally {
             scene.close()
             controller.close()

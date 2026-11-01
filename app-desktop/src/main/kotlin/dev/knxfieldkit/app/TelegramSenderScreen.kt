@@ -1,17 +1,29 @@
 package dev.knxfieldkit.app
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.knxfieldkit.model.*
 
 @Composable
@@ -20,261 +32,320 @@ fun TelegramSenderScreen(state: AppUiState, controller: AppController) {
     val gaInfo = parsedGa?.let { state.project?.findGroupAddress(it) }
     val matchedMainDpt = DptCodec.resolveMainDpt(gaInfo?.dpt)
 
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(Modifier.weight(0.56f).fillMaxHeight()) {
-            Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text("Smart Telegram Sender, Poller & Circuit Blinker", style = MaterialTheme.typography.titleMedium)
+    fun ensureBus() {
+        if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
+    }
 
-                OutlinedTextField(
-                    value = state.selectedGroupAddressInput,
-                    onValueChange = controller::selectGroupAddressForSender,
-                    label = { Text("Target Group Address (3-level 1/1/1, 2-level 1/257, or raw)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Left Workbench Panel: Interactive DPT Encoder & Walk-Test Blinker
+        WorkbenchPanel(
+            title = "Smart DPT Telegram Transmitter, Poller & Walk-Test Blinker",
+            icon = Icons.Default.Send,
+            modifier = Modifier.weight(0.56f).fillMaxHeight(),
+            headerActions = {
+                DesktopPrimaryButton(
+                    text = "Poll GA",
+                    icon = Icons.Default.Sync,
+                    onClick = { ensureBus(); controller.readGroupAddress(state.selectedGroupAddressInput) },
+                    compact = true,
                 )
+                DesktopButton(
+                    text = if (state.isPollingBatch) "Polling All..." else "Poll All Project GAs",
+                    onClick = { ensureBus(); controller.pollAllProjectGroupAddresses() },
+                    enabled = !state.isPollingBatch,
+                    compact = true,
+                )
+                if (state.walkTestActive) {
+                    DesktopPrimaryButton(
+                        text = "Stop Blink (#${state.walkTestStepCount})",
+                        icon = Icons.Default.Stop,
+                        color = WorkbenchColors.AccentAmber,
+                        onClick = controller::stopWalkTestBlink,
+                        compact = true,
+                    )
+                } else {
+                    DesktopButton(
+                        text = "Walk-Test Blink (1.8s)",
+                        icon = Icons.Default.FlashOn,
+                        onClick = { controller.startWalkTestBlink(state.selectedGroupAddressInput) },
+                        accentColor = WorkbenchColors.AccentAmber,
+                        compact = true,
+                    )
+                }
+            },
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // Target GA Bar + Context Card
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CompactInputField(
+                        value = state.selectedGroupAddressInput,
+                        onValueChange = controller::selectGroupAddressForSender,
+                        prefixLabel = "Target Group Address",
+                        placeholder = "1/1/1",
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (gaInfo != null) {
+                        DptBadge(gaInfo.dpt)
+                        LiveValueBadge(state.groupLiveValues[gaInfo.address]?.valueText, state.groupLiveValues[gaInfo.address]?.latencyMs)
+                    }
+                }
 
                 if (gaInfo != null) {
-                    val live = state.groupLiveValues[gaInfo.address]
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.small) {
-                        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Surface(
+                        color = WorkbenchColors.BgCanvas,
+                        shape = RoundedCornerShape(5.dp),
+                        border = BorderStroke(1.dp, WorkbenchColors.BorderSubtle),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(
                                 text = "${gaInfo.address} — ${gaInfo.name}",
-                                color = MaterialTheme.colorScheme.secondary,
-                                style = MaterialTheme.typography.titleSmall,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = WorkbenchColors.AccentSky,
                             )
                             Text(
-                                text = "Detected Type: ${matchedMainDpt.label} [${gaInfo.dpt ?: "raw"}] • Live Value: ${live?.valueText ?: "—"} ${live?.latencyMs?.let { "(${it} ms)" }.orEmpty()}",
+                                text = "Detected Datapoint: ${matchedMainDpt.label} [${gaInfo.dpt ?: "raw"}] · ${gaInfo.description.ifBlank { "No description" }}",
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
-                                style = MaterialTheme.typography.bodySmall,
+                                color = WorkbenchColors.TextSecondary,
                             )
                             if (gaInfo.linkedObjects.isNotEmpty()) {
                                 Text(
-                                    text = "Linked Hardware: " + gaInfo.linkedObjects.joinToString { "${it.deviceAddress} (${it.name})" },
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = "Connected Hardware: " + gaInfo.linkedObjects.joinToString { "${it.deviceAddress} (#${it.objectNumber ?: 0} ${it.name})" },
+                                    fontSize = 10.sp,
+                                    color = WorkbenchColors.TextMuted,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { controller.readGroupAddress(state.selectedGroupAddressInput) }) {
-                        Text("Poll (GroupValue_Read)")
-                    }
-                    OutlinedButton(
-                        onClick = controller::pollAllProjectGroupAddresses,
-                        enabled = !state.isPollingBatch,
-                    ) {
-                        Text(if (state.isPollingBatch) "Polling All..." else "Poll All Project GAs")
-                    }
-                    if (state.walkTestActive) {
-                        Button(
-                            onClick = controller::stopWalkTestBlink,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        ) {
-                            Text("Stop Walk-Test (#${state.walkTestStepCount})")
-                        }
-                    } else {
-                        OutlinedButton(onClick = { controller.startWalkTestBlink(state.selectedGroupAddressInput) }) {
-                            Text("Start Walk-Test Blink (1.8s)")
-                        }
+                // 1. DPT 1.001 Switch & DPT 3.007 Relative Dimming / Shutter Step
+                SenderSectionBox(
+                    title = "DPT 1.001 Switch & DPT 3.007 Relative Dimming / Blinds Step",
+                    highlighted = matchedMainDpt == MainDpt.DPT_1_BOOL || matchedMainDpt == MainDpt.DPT_3_DIM_STEP,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        DesktopPrimaryButton("ON (1)", icon = Icons.Default.Lightbulb, onClick = { ensureBus(); controller.writeGroupSwitch(state.selectedGroupAddressInput, true) })
+                        DesktopButton("OFF (0)", onClick = { ensureBus(); controller.writeGroupSwitch(state.selectedGroupAddressInput, false) })
+                        Spacer(Modifier.width(6.dp))
+                        DesktopButton("Brighter +25%", onClick = { ensureBus(); controller.writeGroupDimStep(state.selectedGroupAddressInput, increase = true, stepCode = 3) })
+                        DesktopButton("Darker -25%", onClick = { ensureBus(); controller.writeGroupDimStep(state.selectedGroupAddressInput, increase = false, stepCode = 3) })
+                        DesktopButton("STOP", onClick = { ensureBus(); controller.writeGroupDimStep(state.selectedGroupAddressInput, increase = false, stepCode = 0) })
                     }
                 }
 
-                HorizontalDivider()
-
-                // DPT 1.001 + DPT 3.007 Lighting & Blinds Quick Row
-                Text(
-                    text = if (matchedMainDpt == MainDpt.DPT_1_BOOL || matchedMainDpt == MainDpt.DPT_3_DIM_STEP) "★ Recommended: Switch (DPT 1.001) & Relative Step (DPT 3.007)" else "Switch (DPT 1.001) & Relative Dim/Shutter Step (DPT 3.007)",
-                    color = if (matchedMainDpt == MainDpt.DPT_1_BOOL || matchedMainDpt == MainDpt.DPT_3_DIM_STEP) Color(0xFF2ECC71) else MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { controller.writeGroupSwitch(state.selectedGroupAddressInput, true) }) {
-                        Text("ON (1)")
-                    }
-                    OutlinedButton(onClick = { controller.writeGroupSwitch(state.selectedGroupAddressInput, false) }) {
-                        Text("OFF (0)")
-                    }
-                    OutlinedButton(onClick = { controller.writeGroupDimStep(state.selectedGroupAddressInput, increase = true, stepCode = 3) }) {
-                        Text("Brighter +25%")
-                    }
-                    OutlinedButton(onClick = { controller.writeGroupDimStep(state.selectedGroupAddressInput, increase = false, stepCode = 3) }) {
-                        Text("Darker -25%")
-                    }
-                    TextButton(onClick = { controller.writeGroupDimStep(state.selectedGroupAddressInput, increase = false, stepCode = 0) }) {
-                        Text("STOP")
-                    }
-                }
-
-                // DPT 5.001 Percentage
+                // 2. DPT 5.001 Percentage Scaling
                 var sliderVal by remember { mutableStateOf(65f) }
-                Text(
-                    text = "${if (matchedMainDpt == MainDpt.DPT_5_PERCENT) "★ Recommended: " else ""}DPT 5.001 — Absolute Scaling (${sliderVal.toInt()} %)",
-                    color = if (matchedMainDpt == MainDpt.DPT_5_PERCENT) Color(0xFF2ECC71) else MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0, 25, 50, 75, 100).forEach { preset ->
-                        OutlinedButton(
-                            onClick = {
-                                sliderVal = preset.toFloat()
-                                controller.writeGroupPercent(state.selectedGroupAddressInput, preset.toDouble())
-                            },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Text("$preset%")
+                SenderSectionBox(
+                    title = "DPT 5.001 Absolute Scaling (${sliderVal.toInt()}%)",
+                    highlighted = matchedMainDpt == MainDpt.DPT_5_PERCENT || matchedMainDpt == MainDpt.DPT_5_UNSIGNED,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        listOf(0, 25, 50, 75, 100).forEach { preset ->
+                            DesktopButton(
+                                text = "$preset%",
+                                onClick = {
+                                    ensureBus()
+                                    sliderVal = preset.toFloat()
+                                    controller.writeGroupPercent(state.selectedGroupAddressInput, preset.toDouble())
+                                },
+                                active = sliderVal.toInt() == preset,
+                                compact = true,
+                            )
                         }
-                    }
-                    Slider(
-                        value = sliderVal,
-                        onValueChange = { sliderVal = it },
-                        valueRange = 0f..100f,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(onClick = { controller.writeGroupPercent(state.selectedGroupAddressInput, sliderVal.toDouble()) }) {
-                        Text("Send")
+                        Slider(
+                            value = sliderVal,
+                            onValueChange = { sliderVal = it },
+                            valueRange = 0f..100f,
+                            modifier = Modifier.weight(1f).height(24.dp),
+                        )
+                        DesktopPrimaryButton("Send %", onClick = { ensureBus(); controller.writeGroupPercent(state.selectedGroupAddressInput, sliderVal.toDouble()) }, compact = true)
                     }
                 }
 
-                // DPT 9.001 Float + DPT 16.001 Display String
+                // 3. DPT 9.001 2-Byte Float & DPT 16.001 14-Byte ASCII/ISO String
                 var floatText by remember { mutableStateOf("21.5") }
-                var displayStr by remember { mutableStateOf("TEST OK") }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "${if (matchedMainDpt == MainDpt.DPT_9_FLOAT) "★ " else ""}DPT 9.001 Float (°C / Lux)",
-                            color = if (matchedMainDpt == MainDpt.DPT_9_FLOAT) Color(0xFF2ECC71) else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedTextField(
-                                value = floatText,
-                                onValueChange = { floatText = it },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Button(onClick = { controller.writeGroupFloat16(state.selectedGroupAddressInput, floatText.toDoubleOrNull() ?: 21.5) }) {
-                                Text("Send")
-                            }
+                var displayStr by remember { mutableStateOf("VILLA OK") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SenderSectionBox(
+                        title = "DPT 9.001 2-Byte Float (°C / Lux)",
+                        highlighted = matchedMainDpt == MainDpt.DPT_9_FLOAT,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CompactInputField(value = floatText, onValueChange = { floatText = it }, prefixLabel = "Val", modifier = Modifier.weight(1f))
+                            DesktopPrimaryButton("Send", onClick = { ensureBus(); controller.writeGroupFloat16(state.selectedGroupAddressInput, floatText.toDoubleOrNull() ?: 21.5) }, compact = true)
                         }
                     }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "${if (matchedMainDpt == MainDpt.DPT_16_STRING) "★ " else ""}DPT 16.001 Panel Text (14ch)",
-                            color = if (matchedMainDpt == MainDpt.DPT_16_STRING) Color(0xFF2ECC71) else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedTextField(
-                                value = displayStr,
-                                onValueChange = { displayStr = it.take(14) },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Button(onClick = { controller.writeGroupString14(state.selectedGroupAddressInput, displayStr) }) {
-                                Text("Send")
-                            }
+                    SenderSectionBox(
+                        title = "DPT 16.001 Panel Text (14-Char)",
+                        highlighted = matchedMainDpt == MainDpt.DPT_16_STRING,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CompactInputField(value = displayStr, onValueChange = { displayStr = it.take(14) }, prefixLabel = "Txt", monospace = true, modifier = Modifier.weight(1f))
+                            DesktopPrimaryButton("Send", onClick = { ensureBus(); controller.writeGroupString14(state.selectedGroupAddressInput, displayStr) }, compact = true)
                         }
                     }
                 }
 
-                // DPT 17.001 Scene & DPT 20.102 HVAC
+                // 4. DPT 17.001 Scene & DPT 20.102 HVAC Operating Mode
                 var sceneText by remember { mutableStateOf("1") }
-                Text("DPT 17.001 Scene & DPT 20.102 HVAC Mode", style = MaterialTheme.typography.labelLarge)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
-                        value = sceneText,
-                        onValueChange = { sceneText = it },
-                        label = { Text("Scene (1..64)") },
-                        singleLine = true,
-                        modifier = Modifier.width(120.dp),
-                    )
-                    Button(onClick = { controller.writeGroupScene(state.selectedGroupAddressInput, sceneText.toIntOrNull() ?: 1) }) {
-                        Text("Scene")
-                    }
-                    listOf(HvacMode.AUTO, HvacMode.COMFORT, HvacMode.STANDBY, HvacMode.ECONOMY).forEach { mode ->
-                        OutlinedButton(
-                            onClick = { controller.writeGroupHvac(state.selectedGroupAddressInput, mode) },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Text(mode.label)
+                SenderSectionBox(
+                    title = "DPT 17.001 Scene (1..64) & DPT 20.102 HVAC Mode",
+                    highlighted = matchedMainDpt == MainDpt.DPT_17_SCENE || matchedMainDpt == MainDpt.DPT_20_HVAC,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        CompactInputField(value = sceneText, onValueChange = { sceneText = it }, prefixLabel = "Scene", modifier = Modifier.width(96.dp))
+                        DesktopPrimaryButton("Recall", onClick = { ensureBus(); controller.writeGroupScene(state.selectedGroupAddressInput, sceneText.toIntOrNull() ?: 1) }, compact = true)
+                        Spacer(Modifier.width(4.dp))
+                        listOf(HvacMode.AUTO, HvacMode.COMFORT, HvacMode.STANDBY, HvacMode.ECONOMY).forEach { mode ->
+                            DesktopButton(
+                                text = mode.label,
+                                onClick = { ensureBus(); controller.writeGroupHvac(state.selectedGroupAddressInput, mode) },
+                                compact = true,
+                            )
                         }
                     }
                 }
 
-                // Raw APDU Hex
+                // 5. Raw CEMI APDU Hex
                 var hexPayload by remember { mutableStateOf("01") }
                 var compact6Bit by remember { mutableStateOf(false) }
-                Text("Raw APDU Hex Payload", style = MaterialTheme.typography.labelLarge)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = hexPayload,
-                        onValueChange = { hexPayload = it },
-                        label = { Text("Hex Bytes (e.g. 0C 1A)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Checkbox(checked = compact6Bit, onCheckedChange = { compact6Bit = it })
-                    Text("6-bit", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { controller.writeGroupRawHex(state.selectedGroupAddressInput, hexPayload, compact6Bit) }) {
-                        Text("Send Raw")
+                SenderSectionBox(
+                    title = "Raw APDU Hex Payload Injection",
+                    highlighted = matchedMainDpt == MainDpt.RAW_BYTES,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CompactInputField(value = hexPayload, onValueChange = { hexPayload = it }, prefixLabel = "Hex", placeholder = "0C 1A", modifier = Modifier.weight(1f))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.clickable { compact6Bit = !compact6Bit },
+                        ) {
+                            Checkbox(checked = compact6Bit, onCheckedChange = { compact6Bit = it }, modifier = Modifier.size(16.dp))
+                            Text("6-bit APCI", fontSize = 10.sp, color = WorkbenchColors.TextSecondary)
+                        }
+                        DesktopButton("Send Raw Hex", onClick = { ensureBus(); controller.writeGroupRawHex(state.selectedGroupAddressInput, hexPayload, compact6Bit) }, compact = true)
                     }
                 }
             }
         }
 
-        // Right Card: Quick Pick Project Group Addresses with Inline Toggle/Poll
-        Card(Modifier.weight(0.44f).fillMaxHeight()) {
-            Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Project Group Addresses (Click to Select)", style = MaterialTheme.typography.titleMedium)
-                var filter by remember { mutableStateOf("") }
-                OutlinedTextField(
+        // Right Workbench Panel: Project Group Address Picker Table
+        var filter by remember { mutableStateOf("") }
+        val itemsList = remember(state.project, filter) {
+            state.project?.groupAddresses?.values?.sortedBy { it.address }.orEmpty().filter {
+                filter.isBlank() ||
+                    it.address.toString().contains(filter, ignoreCase = true) ||
+                    it.name.contains(filter, ignoreCase = true)
+            }
+        }
+        WorkbenchPanel(
+            title = "Project Group Addresses",
+            icon = Icons.Default.FolderOpen,
+            badgeText = "${itemsList.size} GAs",
+            modifier = Modifier.weight(0.44f).fillMaxHeight(),
+            headerActions = {
+                CompactSearchField(
                     value = filter,
                     onValueChange = { filter = it },
-                    placeholder = { Text("Filter GAs by address or name...") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Filter GAs...",
+                    modifier = Modifier.width(155.dp),
                 )
-                val itemsList = remember(state.project, filter) {
-                    state.project?.groupAddresses?.values?.sortedBy { it.address }.orEmpty().filter {
-                        filter.isBlank() ||
-                            it.address.toString().contains(filter, ignoreCase = true) ||
-                            it.name.contains(filter, ignoreCase = true)
+            },
+        ) {
+            DenseTableHeader(
+                listOf(
+                    "Address" to 0.16f,
+                    "Group Name" to 0.44f,
+                    "DPT" to 0.16f,
+                    "Live Value" to 0.24f,
+                )
+            )
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(itemsList, key = { _, g -> g.address.raw }) { idx, ga ->
+                    val live = state.groupLiveValues[ga.address]
+                    val selected = parsedGa == ga.address
+                    val rowBg = when {
+                        selected -> WorkbenchColors.BgSelected
+                        idx % 2 == 1 -> WorkbenchColors.BgRowAlt
+                        else -> WorkbenchColors.BgPanel
                     }
-                }
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(itemsList) { ga ->
-                        val live = state.groupLiveValues[ga.address]
-                        val selected = parsedGa == ga.address
-                        Surface(
-                            onClick = { controller.selectGroupAddressForSender(ga.address.toString()) },
-                            color = if (selected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
-                            shape = MaterialTheme.shapes.small,
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("${ga.address} — ${ga.name}", style = MaterialTheme.typography.bodyMedium)
-                                    Text("DPT ${ga.dpt ?: "raw"} • ${ga.linkedObjects.size} linked obj", style = MaterialTheme.typography.bodySmall)
-                                }
-                                Text(
-                                    text = live?.let { "${it.valueText} ${it.latencyMs?.let { ms -> "(${ms}ms)" }.orEmpty()}" } ?: "—",
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontFamily = FontFamily.Monospace,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(29.dp)
+                            .background(rowBg)
+                            .clickable { controller.selectGroupAddressForSender(ga.address.toString()) }
+                            .padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = ga.address.toString(),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            color = WorkbenchColors.AccentEmerald,
+                            modifier = Modifier.weight(0.16f),
+                        )
+                        Text(
+                            text = ga.name,
+                            fontSize = 11.sp,
+                            color = WorkbenchColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(0.44f).padding(end = 6.dp),
+                        )
+                        Box(modifier = Modifier.weight(0.16f)) {
+                            DptBadge(ga.dpt)
+                        }
+                        Box(modifier = Modifier.weight(0.24f)) {
+                            LiveValueBadge(live?.valueText, live?.latencyMs)
                         }
                     }
+                    HorizontalDivider(thickness = 1.dp, color = WorkbenchColors.BorderSubtle.copy(alpha = 0.4f))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SenderSectionBox(
+    title: String,
+    highlighted: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = if (highlighted) WorkbenchColors.AccentEmerald.copy(alpha = 0.06f) else WorkbenchColors.BgCanvas,
+        shape = RoundedCornerShape(5.dp),
+        border = BorderStroke(
+            1.dp,
+            if (highlighted) WorkbenchColors.AccentEmerald.copy(alpha = 0.50f) else WorkbenchColors.BorderSubtle,
+        ),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (highlighted) {
+                    StatusPill("RECOMMENDED", WorkbenchColors.AccentEmerald)
+                }
+                Text(
+                    text = title,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (highlighted) WorkbenchColors.AccentEmerald else WorkbenchColors.TextSecondary,
+                )
+            }
+            content()
         }
     }
 }
