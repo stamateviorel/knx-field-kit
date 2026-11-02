@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -40,7 +41,7 @@ fun TelegramSenderScreen(state: AppUiState, controller: AppController) {
         // Left Workbench Panel: Interactive DPT Encoder & Walk-Test Blinker
         WorkbenchPanel(
             title = "Smart DPT Telegram Transmitter, Poller & Walk-Test Blinker",
-            icon = Icons.Default.Send,
+            icon = Icons.AutoMirrored.Filled.Send,
             modifier = Modifier.weight(0.56f).fillMaxHeight(),
             headerActions = {
                 DesktopPrimaryButton(

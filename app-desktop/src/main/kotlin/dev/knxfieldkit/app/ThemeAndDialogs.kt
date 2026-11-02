@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -28,29 +29,60 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun KnxFieldKitTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = WorkbenchColors.AccentEmerald,
-            secondary = WorkbenchColors.AccentSky,
-            tertiary = WorkbenchColors.AccentAmber,
-            background = WorkbenchColors.BgCanvas,
-            surface = WorkbenchColors.BgPanel,
-            surfaceVariant = WorkbenchColors.BgHeader,
-            onBackground = WorkbenchColors.TextPrimary,
-            onSurface = WorkbenchColors.TextPrimary,
-            onSurfaceVariant = WorkbenchColors.TextSecondary,
-            outline = WorkbenchColors.BorderSubtle,
-            error = WorkbenchColors.AccentRed,
-        ),
-        shapes = Shapes(
-            extraSmall = RoundedCornerShape(4.dp),
-            small = RoundedCornerShape(5.dp),
-            medium = RoundedCornerShape(6.dp),
-            large = RoundedCornerShape(8.dp),
-        ),
-        content = content,
-    )
+fun KnxFieldKitTheme(
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    content: @Composable () -> Unit,
+) {
+    val isDark = when (themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    val palette = if (isDark) WorkbenchDarkPalette else WorkbenchLightPalette
+    val colorScheme = if (isDark) {
+        darkColorScheme(
+            primary = palette.accentEmerald,
+            secondary = palette.accentSky,
+            tertiary = palette.accentAmber,
+            background = palette.bgCanvas,
+            surface = palette.bgPanel,
+            surfaceVariant = palette.bgHeader,
+            onBackground = palette.textPrimary,
+            onSurface = palette.textPrimary,
+            onSurfaceVariant = palette.textSecondary,
+            outline = palette.borderSubtle,
+            outlineVariant = palette.borderStrong,
+            error = palette.accentRed,
+        )
+    } else {
+        lightColorScheme(
+            primary = palette.accentEmerald,
+            secondary = palette.accentSky,
+            tertiary = palette.accentAmber,
+            background = palette.bgCanvas,
+            surface = palette.bgPanel,
+            surfaceVariant = palette.bgHeader,
+            onBackground = palette.textPrimary,
+            onSurface = palette.textPrimary,
+            onSurfaceVariant = palette.textSecondary,
+            outline = palette.borderSubtle,
+            outlineVariant = palette.borderStrong,
+            error = palette.accentRed,
+        )
+    }
+
+    CompositionLocalProvider(LocalWorkbenchColors provides palette) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            shapes = Shapes(
+                extraSmall = RoundedCornerShape(4.dp),
+                small = RoundedCornerShape(5.dp),
+                medium = RoundedCornerShape(6.dp),
+                large = RoundedCornerShape(8.dp),
+            ),
+            content = content,
+        )
+    }
 }
 
 @Composable

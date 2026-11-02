@@ -14,6 +14,7 @@ data class SavedPreferences(
     val lastGatewayHost: String = "192.168.1.10",
     val lastGatewayPort: Int = 3671,
     val lastUseNat: Boolean = false,
+    val themeMode: String = "system",
 )
 
 object UserPrefsStore {
@@ -61,7 +62,8 @@ object UserPrefsStore {
         val lastGatewayHost = properties.getProperty("last.gateway.host", "192.168.1.10")
         val lastGatewayPort = properties.getProperty("last.gateway.port", "3671").toIntOrNull() ?: 3671
         val lastUseNat = properties.getProperty("last.use.nat", "false").toBoolean()
-        return SavedPreferences(recentFiles, lastGatewayHost, lastGatewayPort, lastUseNat)
+        val themeMode = properties.getProperty("theme.mode", "system")
+        return SavedPreferences(recentFiles, lastGatewayHost, lastGatewayPort, lastUseNat, themeMode)
     }
 
     @Synchronized
@@ -83,6 +85,14 @@ object UserPrefsStore {
         properties.setProperty("last.use.nat", useNat.toString())
         saveProperties()
         return current.copy(lastGatewayHost = host, lastGatewayPort = port, lastUseNat = useNat)
+    }
+
+    @Synchronized
+    fun saveThemeMode(themeMode: String): SavedPreferences {
+        val current = load()
+        properties.setProperty("theme.mode", themeMode)
+        saveProperties()
+        return current.copy(themeMode = themeMode)
     }
 
     private fun saveProperties() {

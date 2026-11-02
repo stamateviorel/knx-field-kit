@@ -378,6 +378,7 @@ private fun KpiStatTile(label: String, value: String, valueColor: Color, modifie
     }
 }
 
+@Composable
 internal fun apciBadgeStyle(apci: ApciType): Pair<String, Color> = when (apci) {
     ApciType.GROUP_WRITE -> "WRITE" to WorkbenchColors.AccentEmerald
     ApciType.GROUP_READ -> "READ?" to WorkbenchColors.AccentSky

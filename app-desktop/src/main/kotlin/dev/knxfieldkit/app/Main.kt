@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -197,6 +198,15 @@ fun KnxFieldKitApp(
                     icon = Icons.Default.SettingsEthernet,
                     onClick = { controller.toggleConnectDialog(true) },
                 )
+                DesktopButton(
+                    text = state.themeMode.label,
+                    icon = when (state.themeMode) {
+                        ThemeMode.DARK -> Icons.Default.DarkMode
+                        ThemeMode.LIGHT -> Icons.Default.LightMode
+                        ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
+                    },
+                    onClick = controller::toggleThemeMode,
+                )
                 if (onOpenMobilePreview != null) {
                     DesktopButton(
                         text = "Phone UI",
@@ -254,7 +264,7 @@ fun KnxFieldKitApp(
                         val icon = when (tab) {
                             AppTab.PROJECT -> Icons.Default.AccountTree
                             AppTab.MONITOR -> Icons.Default.Terminal
-                            AppTab.SENDER -> Icons.Default.Send
+                            AppTab.SENDER -> Icons.AutoMirrored.Filled.Send
                             AppTab.DIAGNOSTICS -> Icons.Default.BuildCircle
                         }
                         Box(
@@ -413,7 +423,8 @@ fun main(args: Array<String>) = application {
             })
             onDispose { dropTarget.isActive = false }
         }
-        KnxFieldKitTheme {
+        val uiState by controller.uiState.collectAsState()
+        KnxFieldKitTheme(themeMode = uiState.themeMode) {
             KnxFieldKitApp(
                 controller = controller,
                 onOpenMobilePreview = { showMobileWindow = true },

@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -99,7 +100,7 @@ fun ExplorerRightInspectorPane(
                     )
                     DesktopButton(
                         text = "Sender",
-                        icon = Icons.Default.Send,
+                        icon = Icons.AutoMirrored.Filled.Send,
                         onClick = {
                             controller.selectGroupAddressForSender(inspectedGa.toString())
                             controller.selectTab(AppTab.SENDER)

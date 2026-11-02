@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,7 +37,7 @@ private sealed interface FlatTreeRow {
     val prefixBadge: String?
     val countBadge: String?
     val icon: ImageVector
-    val iconTint: Color
+    val iconTint: Color?
     val statusDot: Color?
     val expandable: Boolean
     val expanded: Boolean
@@ -52,7 +53,7 @@ private data class SimpleTreeRow(
     override val prefixBadge: String? = null,
     override val countBadge: String? = null,
     override val icon: ImageVector,
-    override val iconTint: Color = WorkbenchColors.AccentSky,
+    override val iconTint: Color? = null,
     override val statusDot: Color? = null,
     override val expandable: Boolean = false,
     override val expanded: Boolean = false,
@@ -230,11 +231,13 @@ fun ProjectExplorerScreen(
                 }
                 HorizontalDivider(thickness = 1.dp, color = WorkbenchColors.BorderSubtle)
 
+                val currentColors = LocalWorkbenchColors.current
                 val topoRows = buildTopologyTreeRows(
                     proj = proj,
                     state = state,
                     controller = controller,
                     filter = treeSearch,
+                    colors = currentColors,
                     isExpanded = ::isExpanded,
                     onToggle = ::toggleExpand,
                 )
@@ -243,6 +246,7 @@ fun ProjectExplorerScreen(
                     state = state,
                     controller = controller,
                     filter = treeSearch,
+                    colors = currentColors,
                     isExpanded = ::isExpanded,
                     onToggle = ::toggleExpand,
                 )
@@ -251,6 +255,7 @@ fun ProjectExplorerScreen(
                     state = state,
                     controller = controller,
                     filter = treeSearch,
+                    colors = currentColors,
                     isExpanded = ::isExpanded,
                     onToggle = ::toggleExpand,
                 )
@@ -357,6 +362,7 @@ private fun buildTopologyTreeRows(
     state: AppUiState,
     controller: AppController,
     filter: String,
+    colors: WorkbenchColorScheme,
     isExpanded: (String, Boolean) -> Boolean,
     onToggle: (String, Boolean) -> Unit,
 ): List<FlatTreeRow> {
@@ -369,7 +375,7 @@ private fun buildTopologyTreeRows(
         label = "Backbone Topology",
         countBadge = proj.allDevices.size.toString(),
         icon = Icons.Default.Hub,
-        iconTint = WorkbenchColors.AccentSky,
+        iconTint = colors.accentSky,
         expandable = true,
         expanded = rootExp,
         selected = state.explorerSelection == ExplorerSelection.TopologyRoot,
@@ -389,7 +395,7 @@ private fun buildTopologyTreeRows(
             label = area.name,
             countBadge = areaDevs.toString(),
             icon = Icons.Default.Dns,
-            iconTint = WorkbenchColors.AccentTeal,
+            iconTint = colors.accentTeal,
             expandable = area.lines.isNotEmpty(),
             expanded = areaExp,
             selected = state.explorerSelection == ExplorerSelection.Area(area.area),
@@ -412,8 +418,8 @@ private fun buildTopologyTreeRows(
             val anyOffline = line.devices.any { state.deviceStatuses[it.address]?.reachable == false }
             val anyOnline = line.devices.any { state.deviceStatuses[it.address]?.reachable == true }
             val lineDot = when {
-                anyOffline -> WorkbenchColors.AccentRed
-                anyOnline -> WorkbenchColors.AccentEmerald
+                anyOffline -> colors.accentRed
+                anyOnline -> colors.accentEmerald
                 else -> null
             }
 
@@ -424,7 +430,7 @@ private fun buildTopologyTreeRows(
                 label = line.name,
                 countBadge = line.devices.size.toString(),
                 icon = Icons.Default.AccountTree,
-                iconTint = WorkbenchColors.AccentSky,
+                iconTint = colors.accentSky,
                 statusDot = lineDot,
                 expandable = line.devices.isNotEmpty(),
                 expanded = lineExp,
@@ -437,8 +443,8 @@ private fun buildTopologyTreeRows(
                     val st = state.deviceStatuses[dev.address]
                     val dot = when {
                         st == null -> null
-                        st.reachable -> WorkbenchColors.AccentEmerald
-                        else -> WorkbenchColors.AccentRed
+                        st.reachable -> colors.accentEmerald
+                        else -> colors.accentRed
                     }
                     rows += SimpleTreeRow(
                         key = "dev-${dev.address}",
@@ -447,7 +453,7 @@ private fun buildTopologyTreeRows(
                         label = dev.name,
                         countBadge = if (dev.comObjects.isNotEmpty()) "${dev.comObjects.size}co" else null,
                         icon = if (dev.address.device == 0) Icons.Default.Router else Icons.Default.Memory,
-                        iconTint = if (dev.address.device == 0) WorkbenchColors.AccentAmber else WorkbenchColors.TextSecondary,
+                        iconTint = if (dev.address.device == 0) colors.accentAmber else colors.textSecondary,
                         statusDot = dot,
                         expandable = false,
                         selected = state.explorerSelection == ExplorerSelection.Device(dev.address),
@@ -465,6 +471,7 @@ private fun buildGroupRangeTreeRows(
     state: AppUiState,
     controller: AppController,
     filter: String,
+    colors: WorkbenchColorScheme,
     isExpanded: (String, Boolean) -> Boolean,
     onToggle: (String, Boolean) -> Unit,
 ): List<FlatTreeRow> {
@@ -477,7 +484,7 @@ private fun buildGroupRangeTreeRows(
         label = "All Group Addresses",
         countBadge = proj.groupAddresses.size.toString(),
         icon = Icons.Default.FolderSpecial,
-        iconTint = WorkbenchColors.AccentEmerald,
+        iconTint = colors.accentEmerald,
         expandable = true,
         expanded = rootExp,
         selected = state.explorerSelection == ExplorerSelection.AllGroupAddresses,
@@ -505,7 +512,7 @@ private fun buildGroupRangeTreeRows(
             label = node.name,
             countBadge = node.totalCount.toString(),
             icon = if (hasChildren && exp) Icons.Default.FolderOpen else Icons.Default.Folder,
-            iconTint = if (depth == 1) WorkbenchColors.AccentAmber else WorkbenchColors.AccentSky,
+            iconTint = if (depth == 1) colors.accentAmber else colors.accentSky,
             expandable = hasChildren,
             expanded = exp,
             selected = state.explorerSelection == ExplorerSelection.GroupRange(node.id),
@@ -526,6 +533,7 @@ private fun buildBuildingTreeRows(
     state: AppUiState,
     controller: AppController,
     filter: String,
+    colors: WorkbenchColorScheme,
     isExpanded: (String, Boolean) -> Boolean,
     onToggle: (String, Boolean) -> Unit,
 ): List<FlatTreeRow> {
@@ -537,7 +545,7 @@ private fun buildBuildingTreeRows(
             depth = 0,
             label = "No Building Locations in Project",
             icon = Icons.Default.Apartment,
-            iconTint = WorkbenchColors.TextMuted,
+            iconTint = colors.textMuted,
             onSelect = { controller.selectExplorerNode(ExplorerSelection.TopologyRoot) },
         )
         return rows
@@ -564,7 +572,7 @@ private fun buildBuildingTreeRows(
             label = loc.name,
             countBadge = allDevs.size.toString(),
             icon = locIcon,
-            iconTint = if (depth == 0) WorkbenchColors.AccentAmber else WorkbenchColors.AccentSky,
+            iconTint = if (depth == 0) colors.accentAmber else colors.accentSky,
             expandable = hasNested,
             expanded = exp,
             selected = (state.explorerSelection as? ExplorerSelection.BuildingSpace)?.path == fullPath,
@@ -581,7 +589,7 @@ private fun buildBuildingTreeRows(
                     label = dev.name,
                     countBadge = "${dev.comObjects.size}co",
                     icon = Icons.Default.Memory,
-                    iconTint = WorkbenchColors.TextSecondary,
+                    iconTint = colors.textSecondary,
                     selected = state.explorerSelection == ExplorerSelection.Device(dev.address),
                     onSelect = { controller.openDeviceObjectsInExplorer(dev.address) },
                 )
@@ -709,11 +717,8 @@ private fun ExplorerCenterDataGrid(
             if (auditLineTarget != null) {
                 DesktopPrimaryButton(
                     text = if (state.isAuditingLine) "Auditing..." else "Audit Line ${auditLineTarget.id}",
-                    icon = Icons.Default.FactCheck,
-                    onClick = {
-                        if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-                        controller.runProjectLineAudit(auditLineTarget.area, auditLineTarget.line)
-                    },
+                    icon = Icons.AutoMirrored.Filled.FactCheck,
+                    onClick = { controller.runProjectLineAudit(auditLineTarget.area, auditLineTarget.line) },
                     enabled = !state.isAuditingLine,
                     compact = true,
                 )

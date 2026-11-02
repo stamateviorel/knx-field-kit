@@ -60,6 +60,12 @@ enum class AppTab(val title: String) {
     DIAGNOSTICS("Diagnostics"),
 }
 
+enum class ThemeMode(val label: String) {
+    SYSTEM("Auto"),
+    DARK("Dark"),
+    LIGHT("Light"),
+}
+
 enum class ExplorerTreeMode(val label: String) {
     DUAL_SPLIT("Split"),
     TOPOLOGY("Topology"),
@@ -96,6 +102,7 @@ data class GroupValueEntry(
 
 data class AppUiState(
     val activeTab: AppTab = AppTab.PROJECT,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val project: KnxProject? = null,
     val projectSourceLabel: String = "No Project Loaded",
     val recentFiles: List<File> = emptyList(),
@@ -171,9 +178,15 @@ class AppController(
     private var walkTestJob: Job? = null
 
     private val initialPrefs = UserPrefsStore.load()
+    private val initialTheme = when (initialPrefs.themeMode.lowercase()) {
+        "dark" -> ThemeMode.DARK
+        "light" -> ThemeMode.LIGHT
+        else -> ThemeMode.SYSTEM
+    }
 
     private val _uiState = MutableStateFlow(
         AppUiState(
+            themeMode = initialTheme,
             project = null,
             projectSourceLabel = "No Project Loaded",
             recentFiles = initialPrefs.recentFiles,
@@ -234,6 +247,20 @@ class AppController(
 
     fun selectTab(tab: AppTab) {
         _uiState.update { it.copy(activeTab = tab) }
+    }
+
+    fun toggleThemeMode() {
+        val next = when (_uiState.value.themeMode) {
+            ThemeMode.SYSTEM -> ThemeMode.DARK
+            ThemeMode.DARK -> ThemeMode.LIGHT
+            ThemeMode.LIGHT -> ThemeMode.SYSTEM
+        }
+        setThemeMode(next)
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        UserPrefsStore.saveThemeMode(mode.name.lowercase())
+        _uiState.update { it.copy(themeMode = mode) }
     }
 
     fun toggleConnectDialog(show: Boolean) {

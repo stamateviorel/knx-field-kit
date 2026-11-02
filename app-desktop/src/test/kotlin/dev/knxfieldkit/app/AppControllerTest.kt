@@ -37,6 +37,26 @@ class AppControllerTest {
     }
 
     @Test
+    fun themeToggleCyclesSystemDarkLightSystem() = runBlocking {
+        val controller = AppController()
+        try {
+            controller.setThemeMode(ThemeMode.SYSTEM)
+            assertEquals(ThemeMode.SYSTEM, controller.uiState.value.themeMode)
+
+            controller.toggleThemeMode()
+            assertEquals(ThemeMode.DARK, controller.uiState.value.themeMode)
+
+            controller.toggleThemeMode()
+            assertEquals(ThemeMode.LIGHT, controller.uiState.value.themeMode)
+
+            controller.toggleThemeMode()
+            assertEquals(ThemeMode.SYSTEM, controller.uiState.value.themeMode)
+        } finally {
+            controller.close()
+        }
+    }
+
+    @Test
     fun encryptedEts6SamplePromptsAndUnlocksInController() = runBlocking {
         val tmpDir = Files.createTempDirectory("ctrl-test-").toFile()
         val controller = AppController()
@@ -208,6 +228,19 @@ class AppControllerTest {
             delay(40L)
             val dlgImg = scene.render(clockNs + 500_000_000L)
             assertEquals(1480, dlgImg.width)
+
+            // 6. Light Mode Desktop Views
+            controller.toggleConnectDialog(false)
+            controller.setThemeMode(ThemeMode.LIGHT)
+            controller.selectTab(AppTab.PROJECT)
+            delay(50L)
+            renderAndSave("knx-v3-explorer-light.png")
+
+            controller.selectTab(AppTab.MONITOR)
+            delay(50L)
+            renderAndSave("knx-v3-monitor-light.png")
+
+            controller.setThemeMode(ThemeMode.DARK)
         } finally {
             scene.close()
             controller.close()
@@ -306,6 +339,17 @@ class AppControllerTest {
             controller.toggleConnectDialog(true)
             delay(80L)
             renderMobile("knx-android-connect-sheet.png")
+
+            // 7. Light Mode Mobile Views
+            controller.toggleConnectDialog(false)
+            controller.setThemeMode(ThemeMode.LIGHT)
+            controller.selectTab(AppTab.PROJECT)
+            delay(80L)
+            renderMobile("knx-android-explorer-light.png")
+
+            controller.selectTab(AppTab.MONITOR)
+            delay(80L)
+            renderMobile("knx-android-monitor-light.png")
         } finally {
             scene.close()
             controller.close()

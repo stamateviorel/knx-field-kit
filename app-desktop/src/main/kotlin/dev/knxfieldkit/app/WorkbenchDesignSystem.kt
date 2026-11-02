@@ -18,6 +18,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -33,25 +35,95 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.knxfieldkit.model.ComObjectFlags
 
+data class WorkbenchColorScheme(
+    val bgCanvas: Color,
+    val bgPanel: Color,
+    val bgPanelAlt: Color,
+    val bgHeader: Color,
+    val bgRowAlt: Color,
+    val bgSelected: Color,
+    val bgHover: Color,
+    val borderSubtle: Color,
+    val borderStrong: Color,
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val textMuted: Color,
+    val accentEmerald: Color,
+    val accentSky: Color,
+    val accentTeal: Color,
+    val accentAmber: Color,
+    val accentRed: Color,
+    val accentPurple: Color,
+    val isDark: Boolean,
+)
+
+val WorkbenchDarkPalette = WorkbenchColorScheme(
+    bgCanvas = Color(0xFF090D16),
+    bgPanel = Color(0xFF0F1624),
+    bgPanelAlt = Color(0xFF131C2E),
+    bgHeader = Color(0xFF162033),
+    bgRowAlt = Color(0xFF0C121E),
+    bgSelected = Color(0xFF193254),
+    bgHover = Color(0xFF18243A),
+    borderSubtle = Color(0xFF223047),
+    borderStrong = Color(0xFF314566),
+    textPrimary = Color(0xFFE6EDF7),
+    textSecondary = Color(0xFF94A6C0),
+    textMuted = Color(0xFF63748F),
+    accentEmerald = Color(0xFF10B981),
+    accentSky = Color(0xFF38BDF8),
+    accentTeal = Color(0xFF14B8A6),
+    accentAmber = Color(0xFFF59E0B),
+    accentRed = Color(0xFFEF4444),
+    accentPurple = Color(0xFFA78BFA),
+    isDark = true,
+)
+
+val WorkbenchLightPalette = WorkbenchColorScheme(
+    bgCanvas = Color(0xFFEDF2F7),
+    bgPanel = Color(0xFFFFFFFF),
+    bgPanelAlt = Color(0xFFF8FAFC),
+    bgHeader = Color(0xFFF1F5F9),
+    bgRowAlt = Color(0xFFF8FAFC),
+    bgSelected = Color(0xFFE0F2FE),
+    bgHover = Color(0xFFF1F5F9),
+    borderSubtle = Color(0xFFE2E8F0),
+    borderStrong = Color(0xFFCBD5E1),
+    textPrimary = Color(0xFF0F172A),
+    textSecondary = Color(0xFF475569),
+    textMuted = Color(0xFF64748B),
+    accentEmerald = Color(0xFF059669),
+    accentSky = Color(0xFF0284C7),
+    accentTeal = Color(0xFF0D9488),
+    accentAmber = Color(0xFFD97706),
+    accentRed = Color(0xFFDC2626),
+    accentPurple = Color(0xFF7C3AED),
+    isDark = false,
+)
+
+val LocalWorkbenchColors = staticCompositionLocalOf { WorkbenchDarkPalette }
+
 object WorkbenchColors {
-    val BgCanvas = Color(0xFF090D16)
-    val BgPanel = Color(0xFF0F1624)
-    val BgPanelAlt = Color(0xFF131C2E)
-    val BgHeader = Color(0xFF162033)
-    val BgRowAlt = Color(0xFF0C121E)
-    val BgSelected = Color(0xFF193254)
-    val BgHover = Color(0xFF18243A)
-    val BorderSubtle = Color(0xFF223047)
-    val BorderStrong = Color(0xFF314566)
-    val TextPrimary = Color(0xFFE6EDF7)
-    val TextSecondary = Color(0xFF94A6C0)
-    val TextMuted = Color(0xFF63748F)
-    val AccentEmerald = Color(0xFF10B981)
-    val AccentSky = Color(0xFF38BDF8)
-    val AccentTeal = Color(0xFF14B8A6)
-    val AccentAmber = Color(0xFFF59E0B)
-    val AccentRed = Color(0xFFEF4444)
-    val AccentPurple = Color(0xFFA78BFA)
+    val BgCanvas: Color @Composable get() = LocalWorkbenchColors.current.bgCanvas
+    val BgPanel: Color @Composable get() = LocalWorkbenchColors.current.bgPanel
+    val BgPanelAlt: Color @Composable get() = LocalWorkbenchColors.current.bgPanelAlt
+    val BgHeader: Color @Composable get() = LocalWorkbenchColors.current.bgHeader
+    val BgRowAlt: Color @Composable get() = LocalWorkbenchColors.current.bgRowAlt
+    val BgSelected: Color @Composable get() = LocalWorkbenchColors.current.bgSelected
+    val BgHover: Color @Composable get() = LocalWorkbenchColors.current.bgHover
+    val BorderSubtle: Color @Composable get() = LocalWorkbenchColors.current.borderSubtle
+    val BorderStrong: Color @Composable get() = LocalWorkbenchColors.current.borderStrong
+    val TextPrimary: Color @Composable get() = LocalWorkbenchColors.current.textPrimary
+    val TextSecondary: Color @Composable get() = LocalWorkbenchColors.current.textSecondary
+    val TextMuted: Color @Composable get() = LocalWorkbenchColors.current.textMuted
+    val AccentEmerald: Color @Composable get() = LocalWorkbenchColors.current.accentEmerald
+    val AccentSky: Color @Composable get() = LocalWorkbenchColors.current.accentSky
+    val AccentTeal: Color @Composable get() = LocalWorkbenchColors.current.accentTeal
+    val AccentAmber: Color @Composable get() = LocalWorkbenchColors.current.accentAmber
+    val AccentRed: Color @Composable get() = LocalWorkbenchColors.current.accentRed
+    val AccentPurple: Color @Composable get() = LocalWorkbenchColors.current.accentPurple
+    val IsDark: Boolean @Composable get() = LocalWorkbenchColors.current.isDark
+    val OnAccent: Color @Composable get() = if (LocalWorkbenchColors.current.isDark) Color(0xFF042F2E) else Color.White
 }
 
 @Composable
@@ -287,7 +359,7 @@ fun TreeRowItem(
     selected: Boolean,
     onClick: () -> Unit,
     icon: ImageVector,
-    iconTint: Color = WorkbenchColors.AccentSky,
+    iconTint: Color? = null,
     prefixBadge: String? = null,
     countBadge: String? = null,
     statusDotColor: Color? = null,
@@ -332,7 +404,7 @@ fun TreeRowItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = iconTint,
+            tint = iconTint ?: WorkbenchColors.AccentSky,
             modifier = Modifier.size(13.dp),
         )
         Spacer(Modifier.width(5.dp))

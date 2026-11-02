@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.knxfieldkit.app.AppController
 import dev.knxfieldkit.app.AppTab
+import dev.knxfieldkit.app.ThemeMode
 import dev.knxfieldkit.model.ConnectionState
 import dev.knxfieldkit.model.EnrichedTelegram
 import dev.knxfieldkit.model.GroupAddressInfo
@@ -40,7 +41,7 @@ fun MobileFieldApp(
     var inspectedGroup by remember { mutableStateOf<GroupAddressInfo?>(null) }
     var inspectedTelegram by remember { mutableStateOf<EnrichedTelegram?>(null) }
 
-    MobileFieldKitTheme {
+    MobileFieldKitTheme(themeMode = state.themeMode) {
         Box(
             modifier = modifier
                 .fillMaxSize()
@@ -140,6 +141,27 @@ fun MobileFieldApp(
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = connColor,
+                                )
+                            }
+
+                            // Theme Switcher Button (Dark / Light / Auto)
+                            IconButton(
+                                onClick = controller::toggleThemeMode,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MobileColors.BgCardElevated),
+                            ) {
+                                val themeIcon = when (state.themeMode) {
+                                    ThemeMode.DARK -> Icons.Default.DarkMode
+                                    ThemeMode.LIGHT -> Icons.Default.LightMode
+                                    ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
+                                }
+                                Icon(
+                                    imageVector = themeIcon,
+                                    contentDescription = "Theme: ${state.themeMode.label}",
+                                    tint = MobileColors.AccentAmber,
+                                    modifier = Modifier.size(18.dp),
                                 )
                             }
 

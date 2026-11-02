@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -182,7 +183,7 @@ fun FieldDiagnosticsScreen(
 
             WorkbenchPanel(
                 title = "2. Project-vs-Bus TP Line Audit",
-                icon = Icons.Default.FactCheck,
+                icon = Icons.AutoMirrored.Filled.FactCheck,
                 badgeText = state.lineAuditReport?.let { "Line ${it.lineId}: ${it.onlineCount}/${it.entries.size} OK" },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 headerActions = {
