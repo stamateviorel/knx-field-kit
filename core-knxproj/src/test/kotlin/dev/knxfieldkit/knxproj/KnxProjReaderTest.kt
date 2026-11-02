@@ -175,4 +175,15 @@ class KnxProjReaderTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun parseRealWorldUserKnxprojIfPresent() {
+        val userFile = File("C:/Users/stama/.gemini/antigravity/scratch/latest_final.knxproj")
+        if (!userFile.isFile) return
+        println("Testing user project: ${userFile.length()} bytes")
+        val isProtected = KnxProjArchiveReader.isPasswordProtected(userFile)
+        println("isProtected: $isProtected")
+        val proj = KnxProjParser.openAndParse(userFile, password = null)
+        println("Parsed project: name='${proj.name}', devices=${proj.allDevices.size}, GAs=${proj.groupAddresses.size}")
+    }
 }

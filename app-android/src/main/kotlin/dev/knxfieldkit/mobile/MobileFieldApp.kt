@@ -214,6 +214,7 @@ fun MobileFieldApp(
                             state = state,
                             controller = controller,
                             onInspectGroupSheet = { inspectedGroup = it },
+                            onOpenProjectFile = onOpenProjectFile,
                         )
                         AppTab.MONITOR -> MobileMonitorScreen(
                             state = state,

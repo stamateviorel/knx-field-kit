@@ -57,6 +57,29 @@ class AppControllerTest {
     }
 
     @Test
+    fun realWorldUserProjectLoadsCleanlyInController() = runBlocking {
+        val userFile = File("C:/Users/stama/.gemini/antigravity/scratch/latest_final.knxproj")
+        if (!userFile.isFile) return@runBlocking
+        val controller = AppController()
+        try {
+            controller.openProjectOrKeyringFile(userFile)
+            var attempts = 0
+            while (controller.uiState.value.project == null && attempts < 100) {
+                delay(50L)
+                attempts++
+            }
+            val proj = controller.uiState.value.project
+            assertNotNull(proj, "Expected real-world user project to load in AppController")
+            assertEquals("Jan (1)", proj.name)
+            assertTrue(proj.allDevices.size >= 250)
+            assertTrue(proj.groupAddresses.size >= 2500)
+            println("Real-world project loaded in controller: ${proj.name}, ${proj.allDevices.size} devs, ${proj.groupAddresses.size} GAs")
+        } finally {
+            controller.close()
+        }
+    }
+
+    @Test
     fun encryptedEts6SamplePromptsAndUnlocksInController() = runBlocking {
         val tmpDir = Files.createTempDirectory("ctrl-test-").toFile()
         val controller = AppController()

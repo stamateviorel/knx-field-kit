@@ -44,7 +44,39 @@
                 <data android:mimeType="*/*" />
                 <data android:host="*" />
                 <data android:pathPattern=".*\\.knxproj" />
+                <data android:pathPattern=".*\\..*\\.knxproj" />
+                <data android:pathPattern=".*\\..*\\..*\\.knxproj" />
                 <data android:pathPattern=".*\\.knxkeys" />
+                <data android:pathPattern=".*\\..*\\.knxkeys" />
+                <data android:pathPattern=".*\\..*\\..*\\.knxkeys" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/knxproj" />
+                <data android:mimeType="application/x-knxproj" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:pathPattern=".*\\.knxproj" />
+                <data android:pathPattern=".*\\..*\\.knxproj" />
+                <data android:pathPattern=".*\\..*\\..*\\.knxproj" />
+                <data android:pathPattern=".*\\.knxkeys" />
+                <data android:pathPattern=".*\\..*\\.knxkeys" />
+                <data android:pathPattern=".*\\..*\\..*\\.knxkeys" />
             </intent-filter>
         </activity>
     </application>

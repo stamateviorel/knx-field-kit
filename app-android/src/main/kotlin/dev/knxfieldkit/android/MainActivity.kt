@@ -15,10 +15,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.ui.Modifier
 import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
 import dev.knxfieldkit.app.AppController
 import dev.knxfieldkit.app.UserPrefsStore
 import dev.knxfieldkit.bus.PureKnxNetIpClient
 import dev.knxfieldkit.mobile.MobileFieldApp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
@@ -57,17 +61,24 @@ class MainActivity : ComponentActivity() {
         )
 
         // Handle .knxproj / .knxkeys tapped directly from Files, WhatsApp, Drive, or Email
-        handleIncomingFileIntent(intent)
+        if (intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND) {
+            handleIncomingFileIntent(intent)
+        } else {
+            // Auto-open last imported project if no project is active
+            val lastImport = File(filesDir, "imports").listFiles()
+                ?.filter { it.isFile && (it.extension.equals("knxproj", true) || it.extension.equals("knxkeys", true)) }
+                ?.maxByOrNull { it.lastModified() }
+            if (lastImport != null && controller.uiState.value.project == null) {
+                controller.openProjectOrKeyringFile(lastImport)
+            }
+        }
 
         setContent {
             val openDocumentLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenDocument(),
             ) { uri: Uri? ->
                 if (uri != null) {
-                    val copied = copyContentUriToAppStorage(uri)
-                    if (copied != null) {
-                        controller.openProjectOrKeyringFile(copied)
-                    }
+                    importAndOpenUri(uri)
                 }
             }
 
@@ -115,40 +126,77 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingFileIntent(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_VIEW) return
-        val uri = intent.data ?: return
-        val copied = copyContentUriToAppStorage(uri)
-        if (copied != null) {
-            controller.openProjectOrKeyringFile(copied)
+        if (intent == null) return
+        val uri: Uri? = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: intent.data
+            }
+            else -> null
+        }
+        if (uri != null) {
+            importAndOpenUri(uri)
         }
     }
 
-    private fun copyContentUriToAppStorage(uri: Uri): File? = runCatching {
-        val displayName = resolveDisplayName(uri)
-            ?.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_")
-            ?.takeIf { it.isNotBlank() }
-            ?: "imported_project.knxproj"
-        val importsDir = File(filesDir, "imports").apply { mkdirs() }
-        val dst = File(importsDir, displayName)
-        contentResolver.openInputStream(uri)?.use { input ->
-            FileOutputStream(dst).use { output ->
-                input.copyTo(output)
+    private fun importAndOpenUri(uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                controller.setStatus("Importing project file...")
             }
-        } ?: return null
-        dst
-    }.getOrNull()
-
-    private fun resolveDisplayName(uri: Uri): String? {
-        if (uri.scheme == "content") {
-            val cursor: Cursor? = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0) return it.getString(idx)
+            val result = runCatching {
+                if (uri.scheme == "file" && uri.path != null) {
+                    val local = File(uri.path!!)
+                    if (local.isFile && local.canRead()) {
+                        return@runCatching local
+                    }
+                }
+                val rawName = resolveDisplayName(uri) ?: "project.knxproj"
+                val cleanedName = rawName.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_")
+                val finalName = when {
+                    cleanedName.endsWith(".knxkeys", ignoreCase = true) -> cleanedName
+                    cleanedName.endsWith(".knxproj", ignoreCase = true) -> cleanedName
+                    else -> "$cleanedName.knxproj"
+                }
+                val importsDir = File(filesDir, "imports").apply { mkdirs() }
+                val dst = File(importsDir, finalName)
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(dst).use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: throw IllegalStateException("Cannot read input stream for $uri")
+                dst
+            }
+            result.onSuccess { file ->
+                withContext(Dispatchers.Main) {
+                    controller.openProjectOrKeyringFile(file)
+                }
+            }.onFailure { err ->
+                withContext(Dispatchers.Main) {
+                    controller.setStatus("Failed to open file: ${err.message}")
                 }
             }
         }
-        return uri.lastPathSegment?.substringAfterLast('/')
+    }
+
+    private fun resolveDisplayName(uri: Uri): String? {
+        if (uri.scheme == "content") {
+            val cursor: Cursor? = runCatching {
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            }.getOrNull()
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        val name = it.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+        }
+        val seg = uri.lastPathSegment?.substringAfterLast('/')
+        return if (!seg.isNullOrBlank()) seg else null
     }
 
     private fun shareExportedFile(file: File, mimeType: String, chooserTitle: String) {

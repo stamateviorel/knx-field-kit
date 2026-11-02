@@ -280,26 +280,33 @@ class AppController(
                 return@launch
             }
 
+            println("KNX: openProjectOrKeyringFile -> ${file.absolutePath} (${file.length()} bytes)")
             try {
                 val protected = withContext(Dispatchers.IO) {
                     KnxProjArchiveReader.isPasswordProtected(file)
                 }
+                println("KNX: isPasswordProtected -> $protected")
                 if (protected) {
                     _uiState.update {
                         it.copy(passwordPrompt = PasswordPromptState(file = file, isKeyring = false))
                     }
                 } else {
+                    println("KNX: parsing archive...")
                     val parsed = withContext(Dispatchers.IO) {
                         KnxProjParser.openAndParse(file, password = null)
                     }
+                    println("KNX: parsed project '${parsed.name}', devices=${parsed.allDevices.size}, GAs=${parsed.groupAddresses.size}")
                     val prefs = UserPrefsStore.recordRecentFile(file)
                     applyLoadedProject(parsed, file.name, prefs.recentFiles)
                 }
             } catch (_: PasswordRequiredException) {
+                println("KNX: PasswordRequiredException for ${file.name}")
                 _uiState.update {
                     it.copy(passwordPrompt = PasswordPromptState(file = file, isKeyring = false))
                 }
             } catch (e: Exception) {
+                println("KNX: Exception opening ${file.name}: ${e.javaClass.simpleName} - ${e.message}")
+                e.printStackTrace()
                 setStatus("Failed to open ${file.name}: ${e.message}")
             }
         }
@@ -1209,7 +1216,7 @@ class AppController(
     private fun csvEscape(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' }) "\"${s.replace("\"", "\"\"")}\"" else s
 
-    private fun setStatus(msg: String) {
+    fun setStatus(msg: String) {
         _uiState.update { it.copy(statusMessage = msg) }
     }
 

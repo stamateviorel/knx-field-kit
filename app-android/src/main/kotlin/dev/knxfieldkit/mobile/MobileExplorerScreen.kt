@@ -39,6 +39,7 @@ fun MobileExplorerScreen(
     state: AppUiState,
     controller: AppController,
     onInspectGroupSheet: (GroupAddressInfo) -> Unit,
+    onOpenProjectFile: () -> Unit = {},
 ) {
     val project = state.project
     var pane by remember { mutableStateOf(MobileExplorerPane.TOPOLOGY) }
@@ -127,11 +128,24 @@ fun MobileExplorerScreen(
                     Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MobileColors.AccentEmerald, modifier = Modifier.size(36.dp))
                     Text("No KNX Project Loaded", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MobileColors.TextPrimary)
                     Text(
-                        "Tap the project banner at the top to open a .knxproj (ETS4/5/6) or .knxkeys file.",
+                        "Tap below or use the project icon at the top to select an ETS project or keyring.",
                         fontSize = 12.sp,
                         color = MobileColors.TextSecondary,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        onClick = onOpenProjectFile,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MobileColors.AccentEmerald,
+                            contentColor = MobileColors.BgCanvas,
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Open .knxproj / .knxkeys File", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             return@Column

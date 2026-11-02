@@ -23,6 +23,27 @@ data class ExtractedKnxArchive(
 object KnxProjArchiveReader {
     private val INNER_PROJECT_ZIP_REGEX = Regex("""^(P-[0-9A-Za-z_-]+)\.zip$""", RegexOption.IGNORE_CASE)
 
+    private fun isRelevantEntry(fileName: String): Boolean {
+        val normalized = fileName.replace('\\', '/')
+        val simpleName = File(normalized).name.lowercase()
+        return simpleName == "knx_master.xml" ||
+               simpleName == "hardware.xml" ||
+               simpleName == "0.xml" ||
+               simpleName == "project.xml" ||
+               INNER_PROJECT_ZIP_REGEX.matches(simpleName)
+    }
+
+    private fun extractRelevantFiles(zip: ZipFile, targetDir: File) {
+        for (header in zip.fileHeaders) {
+            if (header.isDirectory) continue
+            if (isRelevantEntry(header.fileName)) {
+                zip.extractFile(header, targetDir.absolutePath)
+            }
+        }
+    }
+
+    private fun File.readTextNoBom(): String = readText(Charsets.UTF_8).trimStart('\uFEFF')
+
     fun isPasswordProtected(knxProjFile: File): Boolean {
         if (!knxProjFile.isFile) throw MalformedProjectException("File not found: ${knxProjFile.absolutePath}")
         val tmp = Files.createTempDirectory("knxproj-probe-").toFile()
@@ -50,15 +71,16 @@ object KnxProjArchiveReader {
             if (outerZip.isEncrypted) {
                 if (password == null) throw PasswordRequiredException(knxProjFile.nameWithoutExtension)
                 try {
-                    ZipFile(knxProjFile, password.toCharArray()).extractAll(tmp.absolutePath)
+                    val authZip = ZipFile(knxProjFile, password.toCharArray())
+                    extractRelevantFiles(authZip, tmp)
                 } catch (e: ZipException) {
                     throw InvalidPasswordException(knxProjFile.nameWithoutExtension, e)
                 }
             } else {
-                outerZip.extractAll(tmp.absolutePath)
+                extractRelevantFiles(outerZip, tmp)
             }
-            val knxMasterXml = File(tmp, "knx_master.xml").takeIf { it.isFile }?.readText(Charsets.UTF_8)
-            val hardwareXmlFiles = tmp.walkTopDown().filter { it.isFile && it.name.equals("Hardware.xml", ignoreCase = true) }.map { it.readText(Charsets.UTF_8) }.toList()
+            val knxMasterXml = File(tmp, "knx_master.xml").takeIf { it.isFile }?.readTextNoBom()
+            val hardwareXmlFiles = tmp.walkTopDown().filter { it.isFile && it.name.equals("Hardware.xml", ignoreCase = true) }.map { it.readTextNoBom() }.toList()
             val innerZipFile = tmp.listFiles()?.firstOrNull { it.isFile && INNER_PROJECT_ZIP_REGEX.matches(it.name) }
             if (innerZipFile != null) {
                 val projectId = innerZipFile.nameWithoutExtension
@@ -69,7 +91,8 @@ object KnxProjArchiveReader {
                     if (password == null) throw PasswordRequiredException(projectId)
                     val ets6Chars = EtsCrypto.deriveEts6ZipPassword(password)
                     val extractedEts6 = try {
-                        ZipFile(innerZipFile, ets6Chars).extractAll(projDir.absolutePath)
+                        val zEts6 = ZipFile(innerZipFile, ets6Chars)
+                        extractRelevantFiles(zEts6, projDir)
                         true
                     } catch (_: ZipException) {
                         projDir.deleteRecursively()
@@ -78,24 +101,25 @@ object KnxProjArchiveReader {
                     }
                     if (!extractedEts6) {
                         try {
-                            ZipFile(innerZipFile, password.toCharArray()).extractAll(projDir.absolutePath)
+                            val zLegacy = ZipFile(innerZipFile, password.toCharArray())
+                            extractRelevantFiles(zLegacy, projDir)
                         } catch (e: ZipException) {
                             throw InvalidPasswordException(projectId, e)
                         }
                     }
                 } else {
-                    probeZip.extractAll(projDir.absolutePath)
+                    extractRelevantFiles(probeZip, projDir)
                 }
-                val zeroXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name == "0.xml" }?.readText(Charsets.UTF_8)
+                val zeroXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name == "0.xml" }?.readTextNoBom()
                     ?: throw MalformedProjectException("Missing 0.xml in $projectId")
-                val projectXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name.equals("project.xml", ignoreCase = true) }?.readText(Charsets.UTF_8)
+                val projectXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name.equals("project.xml", ignoreCase = true) }?.readTextNoBom()
                 return ExtractedKnxArchive(projectId, outerZip.isEncrypted || encrypted, knxMasterXml, projectXml, zeroXml, hardwareXmlFiles)
             }
             val projDir = tmp.listFiles()?.firstOrNull { it.isDirectory && it.name.startsWith("P-", ignoreCase = true) }
             if (projDir != null) {
-                val zeroXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name == "0.xml" }?.readText(Charsets.UTF_8)
+                val zeroXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name == "0.xml" }?.readTextNoBom()
                     ?: throw MalformedProjectException("Missing 0.xml in ${knxProjFile.name}")
-                val projectXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name.equals("project.xml", ignoreCase = true) }?.readText(Charsets.UTF_8)
+                val projectXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name.equals("project.xml", ignoreCase = true) }?.readTextNoBom()
                 return ExtractedKnxArchive(projDir.name, outerZip.isEncrypted, knxMasterXml, projectXml, zeroXml, hardwareXmlFiles)
             }
             throw MalformedProjectException("No P-xxxx project folder or archive found in ${knxProjFile.name}")

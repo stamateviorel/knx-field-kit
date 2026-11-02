@@ -11,11 +11,14 @@ import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
 
 private fun parseXmlSafe(xml: String): Document {
+    val cleanXml = xml.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
     val factory = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = false
-        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+        runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+        runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
     }
-    return factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+    return factory.newDocumentBuilder().parse(InputSource(StringReader(cleanXml)))
 }
 
 private fun NodeList.elements(): List<Element> = buildList {
