@@ -17,8 +17,12 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import dev.knxfieldkit.app.AppController
+import dev.knxfieldkit.app.AppTab
+import dev.knxfieldkit.app.ExplorerSelection
+import dev.knxfieldkit.app.ThemeMode
 import dev.knxfieldkit.app.UserPrefsStore
 import dev.knxfieldkit.bus.PureKnxNetIpClient
+import dev.knxfieldkit.model.IndividualAddress
 import dev.knxfieldkit.mobile.MobileFieldApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,6 +38,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
 
         UserPrefsStore.configureBaseDir(filesDir)
 
@@ -108,11 +123,59 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+
+        handleIncomingFileIntent(intent)
+        handleNavigationIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIncomingFileIntent(intent)
+        handleNavigationIntent(intent)
+    }
+
+    private fun handleNavigationIntent(intent: Intent?) {
+        if (intent == null) return
+        val tab = intent.getStringExtra("tab")
+        if (tab != null) {
+            when (tab.uppercase()) {
+                "MONITOR" -> controller.selectTab(AppTab.MONITOR)
+                "SENDER" -> controller.selectTab(AppTab.SENDER)
+                "DIAGNOSTICS" -> controller.selectTab(AppTab.DIAGNOSTICS)
+                "PROJECT", "EXPLORER" -> controller.selectTab(AppTab.PROJECT)
+            }
+        }
+        val theme = intent.getStringExtra("theme")
+        if (theme != null) {
+            when (theme.uppercase()) {
+                "LIGHT" -> controller.setThemeMode(ThemeMode.LIGHT)
+                "DARK" -> controller.setThemeMode(ThemeMode.DARK)
+                "SYSTEM" -> controller.setThemeMode(ThemeMode.SYSTEM)
+            }
+        }
+        val nav = intent.getStringExtra("nav")
+        if (nav != null) {
+            when {
+                nav == "groups" -> controller.selectExplorerNode(ExplorerSelection.AllGroupAddresses)
+                nav.startsWith("group:") -> controller.selectExplorerNode(ExplorerSelection.GroupRange(nav.removePrefix("group:")))
+                nav == "rooms" || nav == "buildings" -> controller.selectExplorerNode(ExplorerSelection.BuildingSpace("", "", "Root", emptyList()))
+                nav == "topology" || nav == "root" -> controller.selectExplorerNode(ExplorerSelection.TopologyRoot)
+                nav.startsWith("area:") -> {
+                    val a = nav.removePrefix("area:").toIntOrNull() ?: 0
+                    controller.selectExplorerNode(ExplorerSelection.Area(a))
+                }
+                nav.startsWith("line:") -> {
+                    val parts = nav.removePrefix("line:").split(".")
+                    if (parts.size == 2) {
+                        controller.selectExplorerNode(ExplorerSelection.Line(parts[0].toInt(), parts[1].toInt()))
+                    }
+                }
+                nav.startsWith("device:") -> {
+                    val addr = IndividualAddress.parseOrNull(nav.removePrefix("device:"))
+                    if (addr != null) controller.selectExplorerNode(ExplorerSelection.Device(addr))
+                }
+            }
+        }
     }
 
     override fun onDestroy() {

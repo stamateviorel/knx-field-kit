@@ -185,5 +185,8 @@ class KnxProjReaderTest {
         println("isProtected: $isProtected")
         val proj = KnxProjParser.openAndParse(userFile, password = null)
         println("Parsed project: name='${proj.name}', devices=${proj.allDevices.size}, GAs=${proj.groupAddresses.size}")
+        println("Areas: ${proj.areas.map { "Area ${it.area} '${it.name}': ${it.lines.size} lines" }}")
+        println("Locations: ${proj.locations.map { "${it.type} '${it.name}': ${it.children.size} children, ${it.deviceAddresses.size} devs" }}")
+        println("Effective Group Ranges: ${proj.effectiveGroupRanges.map { "${it.prefixLabel} '${it.name}': ${it.children.size} sub-ranges, ${it.directAddresses.size} direct, total ${it.totalCount}" }}")
     }
 }

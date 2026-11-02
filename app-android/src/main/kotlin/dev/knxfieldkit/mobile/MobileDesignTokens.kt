@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,40 +61,40 @@ data class MobileColorScheme(
 )
 
 val MobileDarkPalette = MobileColorScheme(
-    bgCanvas = Color(0xFF0B0F17),
-    bgTopBar = Color(0xFF101722),
-    bgCard = Color(0xFF151E2D),
-    bgCardElevated = Color(0xFF1C283C),
-    bgInput = Color(0xFF0E1420),
-    borderSubtle = Color(0xFF263449),
-    borderStrong = Color(0xFF364966),
-    textPrimary = Color(0xFFF1F5F9),
-    textSecondary = Color(0xFF94A3B8),
-    textMuted = Color(0xFF64748B),
-    accentEmerald = Color(0xFF10B981),
-    accentSky = Color(0xFF38BDF8),
-    accentAmber = Color(0xFFF59E0B),
-    accentRed = Color(0xFFEF4444),
-    accentPurple = Color(0xFFA855F7),
+    bgCanvas = Color(0xFF111318),
+    bgTopBar = Color(0xFF191C20),
+    bgCard = Color(0xFF1D2024),
+    bgCardElevated = Color(0xFF282A2F),
+    bgInput = Color(0xFF23262B),
+    borderSubtle = Color(0xFF33353A),
+    borderStrong = Color(0xFF44474E),
+    textPrimary = Color(0xFFE2E2E9),
+    textSecondary = Color(0xFFC4C6D0),
+    textMuted = Color(0xFF8E9099),
+    accentEmerald = Color(0xFF7DD9BC),
+    accentSky = Color(0xFFA8C7FA),
+    accentAmber = Color(0xFFFFB951),
+    accentRed = Color(0xFFFFB4AB),
+    accentPurple = Color(0xFFD0BCFF),
     isDark = true,
 )
 
 val MobileLightPalette = MobileColorScheme(
-    bgCanvas = Color(0xFFF1F5F9),
+    bgCanvas = Color(0xFFF9F9FF),
     bgTopBar = Color(0xFFFFFFFF),
     bgCard = Color(0xFFFFFFFF),
-    bgCardElevated = Color(0xFFF8FAFC),
-    bgInput = Color(0xFFF1F5F9),
-    borderSubtle = Color(0xFFE2E8F0),
-    borderStrong = Color(0xFFCBD5E1),
-    textPrimary = Color(0xFF0F172A),
-    textSecondary = Color(0xFF475569),
-    textMuted = Color(0xFF64748B),
-    accentEmerald = Color(0xFF059669),
-    accentSky = Color(0xFF0284C7),
-    accentAmber = Color(0xFFD97706),
-    accentRed = Color(0xFFDC2626),
-    accentPurple = Color(0xFF7C3AED),
+    bgCardElevated = Color(0xFFF3F3FA),
+    bgInput = Color(0xFFEDEDF4),
+    borderSubtle = Color(0xFFE2E2E9),
+    borderStrong = Color(0xFFC4C6D0),
+    textPrimary = Color(0xFF191C20),
+    textSecondary = Color(0xFF44474E),
+    textMuted = Color(0xFF74777F),
+    accentEmerald = Color(0xFF006C4C),
+    accentSky = Color(0xFF0B57D0),
+    accentAmber = Color(0xFF7A5900),
+    accentRed = Color(0xFFBA1A1A),
+    accentPurple = Color(0xFF6750A4),
     isDark = false,
 )
 
@@ -188,6 +189,31 @@ fun MobileBadge(text: String, color: Color, modifier: Modifier = Modifier) {
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             color = color,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+fun MobileActionPill(
+    label: String,
+    accent: Color,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(accent.copy(alpha = 0.16f))
+            .border(1.dp, accent.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = accent,
             maxLines = 1,
         )
     }
