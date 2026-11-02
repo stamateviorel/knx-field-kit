@@ -84,10 +84,7 @@ fun ExplorerRightInspectorPane(
                     DesktopPrimaryButton(
                         text = "Poll",
                         icon = Icons.Default.Sync,
-                        onClick = {
-                            if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-                            controller.readGroupAddress(inspectedGa.toString())
-                        },
+                        onClick = { controller.readGroupAddress(inspectedGa.toString()) },
                         compact = true,
                     )
                     DesktopButton(
@@ -207,18 +204,12 @@ fun ExplorerRightInspectorPane(
                         )
                         DesktopButton(
                             text = "Ping",
-                            onClick = {
-                                if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-                                controller.pingIndividualDevice(dev.address.toString())
-                            },
+                            onClick = { controller.pingIndividualDevice(dev.address.toString()) },
                             compact = true,
                         )
                         DesktopButton(
                             text = "BCU",
-                            onClick = {
-                                if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-                                controller.inspectDeviceDiagnostics(dev.address.toString())
-                            },
+                            onClick = { controller.inspectDeviceDiagnostics(dev.address.toString()) },
                             compact = true,
                         )
                         DesktopButton(
@@ -298,9 +289,9 @@ fun ExplorerDockedMonitorPane(
         headerActions = {
             if (state.connectionState !is ConnectionState.Connected) {
                 DesktopPrimaryButton(
-                    text = "Start Virtual Bus",
-                    icon = Icons.Default.Bolt,
-                    onClick = controller::connectSimulator,
+                    text = "Connect Gateway...",
+                    icon = Icons.Default.Router,
+                    onClick = { controller.toggleConnectDialog(true) },
                     compact = true,
                 )
             }
@@ -335,7 +326,7 @@ fun ExplorerDockedMonitorPane(
         if (state.telegrams.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "Live bus stream idle — click 'Start Virtual Bus' or trigger any ON/OFF/Poll/Ping action above to watch KNX frames in real time.",
+                    text = "Live bus stream idle — connect to a KNXnet/IP gateway to monitor telegrams in real time.",
                     fontSize = 11.sp,
                     color = WorkbenchColors.TextMuted,
                 )

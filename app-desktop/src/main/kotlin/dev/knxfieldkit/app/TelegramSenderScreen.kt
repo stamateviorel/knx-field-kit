@@ -33,7 +33,7 @@ fun TelegramSenderScreen(state: AppUiState, controller: AppController) {
     val matchedMainDpt = DptCodec.resolveMainDpt(gaInfo?.dpt)
 
     fun ensureBus() {
-        if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
+        if (state.connectionState !is ConnectionState.Connected) controller.toggleConnectDialog(true)
     }
 
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

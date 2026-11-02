@@ -74,8 +74,6 @@ private fun MobileBottomSheetScrim(
 fun MobileProjectMenuSheet(
     state: AppUiState,
     onOpenFile: () -> Unit,
-    onLoadEncryptedSample: () -> Unit,
-    onLoadDemoVilla: () -> Unit,
     onOpenRecent: (File) -> Unit,
     onShareMarkdown: () -> Unit,
     onShareHtml: () -> Unit,
@@ -110,34 +108,6 @@ fun MobileProjectMenuSheet(
             Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Open .knxproj or .knxkeys File", fontWeight = FontWeight.Bold)
-        }
-
-        OutlinedButton(
-            onClick = {
-                onDismiss()
-                onLoadEncryptedSample()
-            },
-            border = BorderStroke(1.dp, MobileColors.AccentAmber),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Default.Lock, contentDescription = null, tint = MobileColors.AccentAmber, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Test Encrypted ETS6 Sample (knx2026)", color = MobileColors.AccentAmber, fontWeight = FontWeight.SemiBold)
-        }
-
-        OutlinedButton(
-            onClick = {
-                onDismiss()
-                onLoadDemoVilla()
-            },
-            border = BorderStroke(1.dp, MobileColors.AccentSky),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Default.HomeWork, contentDescription = null, tint = MobileColors.AccentSky, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Load Built-In Demo (Villa Horizon)", color = MobileColors.AccentSky)
         }
 
         HorizontalDivider(color = MobileColors.BorderSubtle)
@@ -278,15 +248,6 @@ fun MobilePasswordSheet(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            MobileActionPill("Fill Sample: knx2026", MobileColors.AccentSky) {
-                password = "knx2026"
-            }
-        }
-
         if (prompt.errorMessage != null) {
             Text(
                 text = prompt.errorMessage ?: "",
@@ -371,20 +332,6 @@ fun MobileGatewayConnectSheet(
             }
         }
 
-        // 1-Tap Virtual KNX Bus Simulator
-        Button(
-            onClick = { controller.connectSimulator() },
-            colors = ButtonDefaults.buttonColors(containerColor = MobileColors.AccentEmerald, contentColor = Color(0xFF042F2E)),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Default.Memory, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Start Virtual KNX Bus (Offline Field Lab)", fontWeight = FontWeight.Bold)
-        }
-
-        HorizontalDivider(color = MobileColors.BorderSubtle)
-
         // Wi-Fi Multicast Gateway Discovery
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -427,11 +374,7 @@ fun MobileGatewayConnectSheet(
                         )
                     }
                     MobileActionPill("Connect", MobileColors.AccentEmerald) {
-                        if (gw.host == "127.0.0.1" && gw.name.contains("Simulated")) {
-                            controller.connectSimulator()
-                        } else {
-                            controller.connectTunneling(gw.host, gw.port, useNat = true)
-                        }
+                        controller.connectTunneling(gw.host, gw.port, useNat = true)
                     }
                 }
             }

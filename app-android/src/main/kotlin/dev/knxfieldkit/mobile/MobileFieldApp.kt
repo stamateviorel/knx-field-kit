@@ -31,7 +31,6 @@ fun MobileFieldApp(
     controller: AppController,
     modifier: Modifier = Modifier,
     onOpenProjectFile: () -> Unit = {},
-    onLoadEncryptedSample: () -> Unit = {},
     onShareHtmlReport: () -> Unit = {},
     onShareMonitorCsv: () -> Unit = {},
     onShareMarkdownSummary: () -> Unit = {},
@@ -293,8 +292,6 @@ fun MobileFieldApp(
                 MobileProjectMenuSheet(
                     state = state,
                     onOpenFile = onOpenProjectFile,
-                    onLoadEncryptedSample = onLoadEncryptedSample,
-                    onLoadDemoVilla = { controller.loadDemoProject() },
                     onOpenRecent = { controller.openProjectOrKeyringFile(it) },
                     onShareMarkdown = onShareMarkdownSummary,
                     onShareHtml = onShareHtmlReport,

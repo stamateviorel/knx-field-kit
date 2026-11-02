@@ -21,6 +21,22 @@ import kotlin.test.assertTrue
 class AppControllerTest {
 
     @Test
+    fun initialControllerStateIsCleanWithNoProjectLoaded() = runBlocking {
+        val controller = AppController()
+        try {
+            val state = controller.uiState.value
+            assertNull(state.project, "Project must be null on launch")
+            assertEquals("No Project Loaded", state.projectSourceLabel)
+            assertNull(state.selectedDeviceAddress)
+            assertEquals("", state.selectedGroupAddressInput)
+            assertEquals(ConnectionState.Disconnected, state.connectionState)
+            assertTrue(state.statusMessage.contains("Ready"))
+        } finally {
+            controller.close()
+        }
+    }
+
+    @Test
     fun encryptedEts6SamplePromptsAndUnlocksInController() = runBlocking {
         val tmpDir = Files.createTempDirectory("ctrl-test-").toFile()
         val controller = AppController()
@@ -91,6 +107,15 @@ class AppControllerTest {
             }
         }
         try {
+            controller.loadDemoProject()
+            controller.connectSimulator()
+            var simAttempts = 0
+            while (controller.uiState.value.connectionState !is ConnectionState.Connected && simAttempts < 50) {
+                delay(50L)
+                simAttempts++
+            }
+            assertTrue(controller.uiState.value.connectionState is ConnectionState.Connected)
+
             controller.runFullSiteCheck()
             var attempts = 0
             while (controller.uiState.value.siteCheckReport == null && attempts < 180) {
@@ -200,6 +225,15 @@ class AppControllerTest {
             MobileFieldApp(controller = controller)
         }
         try {
+            controller.loadDemoProject()
+            controller.connectSimulator()
+            var simAttempts = 0
+            while (controller.uiState.value.connectionState !is ConnectionState.Connected && simAttempts < 50) {
+                delay(50L)
+                simAttempts++
+            }
+            assertTrue(controller.uiState.value.connectionState is ConnectionState.Connected)
+
             controller.runFullSiteCheck()
             var attempts = 0
             while (controller.uiState.value.siteCheckReport == null && attempts < 180) {

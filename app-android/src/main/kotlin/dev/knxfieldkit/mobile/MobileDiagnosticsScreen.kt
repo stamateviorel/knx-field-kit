@@ -436,25 +436,6 @@ fun MobileDiagnosticsScreen(
                                 MobileBadge("Mask ${found.maskVersionHex}", MobileColors.AccentEmerald)
                             }
                         }
-
-                        HorizontalDivider(color = MobileColors.BorderSubtle)
-                        Text("VIRTUAL BUS FAULT LAB CONTROLS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MobileColors.AccentAmber)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MobileActionPill("Fix 1.1.40 Wiring", MobileColors.AccentEmerald) {
-                                controller.toggleSimulatedDeviceOnline(IndividualAddress(1, 1, 40), true)
-                            }
-                            MobileActionPill("Break 1.1.40", MobileColors.AccentRed) {
-                                controller.toggleSimulatedDeviceOnline(IndividualAddress(1, 1, 40), false)
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MobileActionPill("1.1.20 LED ON", MobileColors.AccentAmber) {
-                                controller.toggleSimulatedProgrammingLed(IndividualAddress(1, 1, 20), true)
-                            }
-                            MobileActionPill("1.1.20 LED OFF", MobileColors.TextSecondary) {
-                                controller.toggleSimulatedProgrammingLed(IndividualAddress(1, 1, 20), false)
-                            }
-                        }
                     }
                 }
             }

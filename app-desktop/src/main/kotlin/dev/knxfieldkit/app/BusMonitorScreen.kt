@@ -156,9 +156,9 @@ fun BusMonitorScreen(state: AppUiState, controller: AppController, onExportCsv: 
                             Text("No KNX telegrams captured yet.", fontSize = 12.sp, color = WorkbenchColors.TextSecondary)
                             if (state.connectionState !is ConnectionState.Connected) {
                                 DesktopPrimaryButton(
-                                    text = "Start Virtual KNX Bus Simulator",
-                                    icon = Icons.Default.Bolt,
-                                    onClick = controller::connectSimulator,
+                                    text = "Connect KNXnet/IP Gateway",
+                                    icon = Icons.Default.Router,
+                                    onClick = { controller.toggleConnectDialog(true) },
                                 )
                             }
                         }

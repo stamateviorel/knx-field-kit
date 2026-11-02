@@ -187,14 +187,14 @@ fun KnxFieldKitApp(
                     )
                 } else {
                     DesktopPrimaryButton(
-                        text = "Start Virtual Bus",
-                        icon = Icons.Default.Bolt,
-                        onClick = controller::connectSimulator,
+                        text = "Connect Gateway...",
+                        icon = Icons.Default.Router,
+                        onClick = { controller.toggleConnectDialog(true) },
                     )
                 }
                 DesktopButton(
                     text = "Gateways...",
-                    icon = Icons.Default.Router,
+                    icon = Icons.Default.SettingsEthernet,
                     onClick = { controller.toggleConnectDialog(true) },
                 )
                 if (onOpenMobilePreview != null) {
@@ -379,13 +379,6 @@ fun main(args: Array<String>) = application {
     val controller = remember { AppController(hardwareClientFactory = { CalimeroKnxBusClient(it) }) }
     var showMobileWindow by remember { mutableStateOf("--mobile-preview" in args) }
     LaunchedEffect(Unit) {
-        if ("--connect-sim" in args) {
-            controller.connectSimulator()
-        }
-        if ("--prompt-ets6-sample" in args) {
-            val sampleFile = File("samples", "penthouse_ets6_encrypted.knxproj")
-            controller.generateAndPromptEncryptedSample(sampleFile, samplePassword = "knx2026")
-        }
         args.firstOrNull { !it.startsWith("--") }?.let { path ->
             val target = File(path)
             if (target.isFile) controller.openProjectOrKeyringFile(target)
@@ -437,10 +430,6 @@ fun main(args: Array<String>) = application {
                 controller = controller,
                 onOpenProjectFile = {
                     pickOpenFile("Open .knxproj or .knxkeys")?.let(controller::openProjectOrKeyringFile)
-                },
-                onLoadEncryptedSample = {
-                    val sampleFile = File("samples", "penthouse_ets6_encrypted.knxproj")
-                    controller.generateAndPromptEncryptedSample(sampleFile, samplePassword = "knx2026")
                 },
                 onShareHtmlReport = {
                     pickSaveFile("Export HTML Commissioning Report", "knx-commissioning-report.html")

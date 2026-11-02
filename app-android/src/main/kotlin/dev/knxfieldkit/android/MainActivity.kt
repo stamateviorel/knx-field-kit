@@ -77,10 +77,6 @@ class MainActivity : ComponentActivity() {
                 onOpenProjectFile = {
                     openDocumentLauncher.launch(arrayOf("*/*"))
                 },
-                onLoadEncryptedSample = {
-                    val sampleTarget = File(File(filesDir, "samples").apply { mkdirs() }, "penthouse_ets6_encrypted.knxproj")
-                    controller.generateAndPromptEncryptedSample(sampleTarget, samplePassword = "knx2026")
-                },
                 onShareHtmlReport = {
                     val target = File(File(filesDir, "exports").apply { mkdirs() }, "knx-commissioning-report.html")
                     controller.exportHtmlCommissioningReport(target) { exported ->

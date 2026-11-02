@@ -113,8 +113,26 @@ fun MobileExplorerScreen(
         )
 
         if (project == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No KNX project loaded.", color = MobileColors.TextSecondary)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MobileColors.BgCard,
+                border = BorderStroke(1.dp, MobileColors.BorderSubtle),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MobileColors.AccentEmerald, modifier = Modifier.size(36.dp))
+                    Text("No KNX Project Loaded", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MobileColors.TextPrimary)
+                    Text(
+                        "Tap the project banner at the top to open a .knxproj (ETS4/5/6) or .knxkeys file.",
+                        fontSize = 12.sp,
+                        color = MobileColors.TextSecondary,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
             }
             return@Column
         }

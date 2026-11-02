@@ -146,12 +146,12 @@ fun MobileMonitorScreen(
                     Icon(Icons.Default.Sensors, contentDescription = null, tint = MobileColors.AccentSky, modifier = Modifier.size(28.dp))
                     Text("Waiting for KNX Bus Traffic", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MobileColors.TextPrimary)
                     Text(
-                        "Connect to a Wi-Fi KNXnet/IP Gateway or tap below to launch the Virtual TP1 Bus Simulator.",
+                        "Connect to a Wi-Fi KNXnet/IP Gateway to monitor live telegrams in real time.",
                         fontSize = 12.sp,
                         color = MobileColors.TextSecondary,
                     )
-                    MobileActionPill("Start Virtual Bus", MobileColors.AccentEmerald) {
-                        controller.connectSimulator()
+                    MobileActionPill("Connect Gateway", MobileColors.AccentSky) {
+                        controller.toggleConnectDialog(true)
                     }
                 }
             }

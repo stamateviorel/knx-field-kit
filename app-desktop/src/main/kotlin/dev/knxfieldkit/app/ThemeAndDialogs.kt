@@ -110,19 +110,7 @@ fun PasswordUnlockDialog(prompt: PasswordPromptState, onSubmit: (String) -> Unit
             )
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (prompt.file.name.contains("sample", ignoreCase = true) ||
-                    prompt.file.name.contains("penthouse_ets6", ignoreCase = true)
-                ) {
-                    DesktopButton(
-                        text = "Fill Sample (knx2026)",
-                        onClick = { onSubmit("knx2026") },
-                        accentColor = WorkbenchColors.AccentAmber,
-                        active = true,
-                    )
-                }
-                DesktopButton(text = "Cancel", onClick = onDismiss)
-            }
+            DesktopButton(text = "Cancel", onClick = onDismiss)
         },
     )
 }
@@ -148,11 +136,6 @@ fun GatewayConnectDialog(state: AppUiState, controller: AppController) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.width(460.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     DesktopPrimaryButton(
-                        text = "Start Virtual Bus",
-                        icon = Icons.Default.Bolt,
-                        onClick = { controller.connectSimulator() },
-                    )
-                    DesktopButton(
                         text = if (state.isDiscoveringGateways) "Scanning LAN..." else "Scan LAN Gateways",
                         icon = Icons.Default.Search,
                         onClick = { controller.discoverGateways() },
@@ -180,7 +163,6 @@ fun GatewayConnectDialog(state: AppUiState, controller: AppController) {
                                         .clickable {
                                             host = gw.host
                                             portText = gw.port.toString()
-                                            if (gw.host == "127.0.0.1") controller.connectSimulator()
                                         }
                                         .padding(horizontal = 8.dp, vertical = 5.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,

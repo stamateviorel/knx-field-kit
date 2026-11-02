@@ -97,7 +97,7 @@ data class GroupValueEntry(
 data class AppUiState(
     val activeTab: AppTab = AppTab.PROJECT,
     val project: KnxProject? = null,
-    val projectSourceLabel: String = "Demo Villa Project",
+    val projectSourceLabel: String = "No Project Loaded",
     val recentFiles: List<File> = emptyList(),
     val savedGatewayHost: String = "192.168.1.10",
     val savedGatewayPort: Int = 3671,
@@ -121,9 +121,9 @@ data class AppUiState(
     val explorerSelection: ExplorerSelection = ExplorerSelection.TopologyRoot,
     val showExplorerBottomMonitor: Boolean = true,
     val showExplorerRightInspector: Boolean = true,
-    val selectedDeviceAddress: IndividualAddress? = IndividualAddress(1, 1, 10),
+    val selectedDeviceAddress: IndividualAddress? = null,
     val selectedInspectorGroup: GroupAddress? = null,
-    val selectedGroupAddressInput: String = "1/1/1",
+    val selectedGroupAddressInput: String = "",
     val isPollingBatch: Boolean = false,
     val walkTestActive: Boolean = false,
     val walkTestGroupAddress: GroupAddress? = null,
@@ -143,7 +143,7 @@ data class AppUiState(
     val isRunningFullSiteCheck: Boolean = false,
     val siteCheckProgressText: String = "",
     val siteCheckReport: SiteCheckReport? = null,
-    val statusMessage: String = "Ready — Open any .knxproj / .knxkeys file or connect to the KNX bus",
+    val statusMessage: String = "Ready — Open a .knxproj / .knxkeys file to begin or connect to KNXnet/IP",
 )
 
 class AppController(
@@ -164,7 +164,7 @@ class AppController(
     private val hardwareClient = hardwareClientFactory(scope)
 
     @Volatile
-    private var activeClient: KnxBusClient = simulatedClient
+    private var activeClient: KnxBusClient = hardwareClient
 
     private var subnetScanJob: Job? = null
     private var batchPollJob: Job? = null
@@ -174,12 +174,14 @@ class AppController(
 
     private val _uiState = MutableStateFlow(
         AppUiState(
-            project = DemoKnxProjectFactory.createDemoVillaProject(),
-            projectSourceLabel = "Built-in Demo (Villa Horizon)",
+            project = null,
+            projectSourceLabel = "No Project Loaded",
             recentFiles = initialPrefs.recentFiles,
             savedGatewayHost = initialPrefs.lastGatewayHost,
             savedGatewayPort = initialPrefs.lastGatewayPort,
             savedGatewayUseNat = initialPrefs.lastUseNat,
+            selectedDeviceAddress = null,
+            selectedGroupAddressInput = "",
         )
     )
     val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
@@ -515,13 +517,15 @@ class AppController(
             multicastAcquireCallback?.invoke()
             try {
                 val realGateways = runCatching { hardwareClient.discoverGateways(2_500L) }.getOrDefault(emptyList())
-                val simGateways = simulatedClient.discoverGateways(100L)
-                val combined = realGateways + simGateways
                 _uiState.update {
                     it.copy(
-                        discoveredGateways = combined,
+                        discoveredGateways = realGateways,
                         isDiscoveringGateways = false,
-                        statusMessage = "Discovered ${realGateways.size} Wi-Fi/LAN KNXnet/IP gateway(s) + 1 Virtual Bus Simulator",
+                        statusMessage = if (realGateways.isEmpty()) {
+                            "No KNXnet/IP gateways discovered on Wi-Fi/LAN"
+                        } else {
+                            "Discovered ${realGateways.size} KNXnet/IP gateway(s) on Wi-Fi/LAN"
+                        },
                     )
                 }
             } finally {
@@ -729,6 +733,10 @@ class AppController(
         }
         walkTestJob?.cancel()
         walkTestJob = scope.launch {
+            if (_uiState.value.connectionState !is ConnectionState.Connected) {
+                setStatus("Bus not connected — Connect to a KNXnet/IP gateway first")
+                return@launch
+            }
             val dpt = DptCodec.resolveMainDpt(_uiState.value.project?.findGroupAddress(ga)?.dpt)
             _uiState.update {
                 it.copy(
@@ -743,9 +751,8 @@ class AppController(
             try {
                 while (true) {
                     if (_uiState.value.connectionState !is ConnectionState.Connected) {
-                        activeClient = simulatedClient
-                        _uiState.value.project?.let { simulatedClient.syncWithProject(it) }
-                        simulatedClient.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = true))
+                        setStatus("Bus disconnected — stopping Walk-Test")
+                        break
                     }
                     when (dpt) {
                         MainDpt.DPT_5_PERCENT, MainDpt.DPT_5_UNSIGNED -> {
@@ -1012,6 +1019,10 @@ class AppController(
     fun runFullSiteCheck() {
         if (_uiState.value.isRunningFullSiteCheck) return
         scope.launch {
+            if (_uiState.value.connectionState !is ConnectionState.Connected) {
+                setStatus("Bus not connected — Connect to a KNXnet/IP gateway before running Site Check")
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     isRunningFullSiteCheck = true,
@@ -1020,11 +1031,6 @@ class AppController(
                 )
             }
             try {
-                if (_uiState.value.connectionState !is ConnectionState.Connected) {
-                    activeClient = simulatedClient
-                    _uiState.value.project?.let { simulatedClient.syncWithProject(it) }
-                    simulatedClient.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = true))
-                }
                 val proj = _uiState.value.project
                 val statuses = _uiState.value.deviceStatuses.toMutableMap()
 

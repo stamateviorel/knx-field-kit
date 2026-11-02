@@ -30,7 +30,7 @@ fun FieldDiagnosticsScreen(
     onExportHtmlReport: () -> Unit = {},
 ) {
     fun ensureBus() {
-        if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
+        if (state.connectionState !is ConnectionState.Connected) controller.toggleConnectDialog(true)
     }
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -113,14 +113,6 @@ fun FieldDiagnosticsScreen(
                 title = "1. Device Ping (DD0), BCU Inspector & Remote Restart",
                 icon = Icons.Default.NetworkCheck,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                headerActions = {
-                    if (state.isSimulatorActive) {
-                        IndividualAddress.parseOrNull(targetIa)?.let { ia ->
-                            DesktopButton("Sim: Online", onClick = { controller.toggleSimulatedDeviceOnline(ia, true) }, compact = true)
-                            DesktopButton("Sim: Fault", onClick = { controller.toggleSimulatedDeviceOnline(ia, false) }, accentColor = WorkbenchColors.AccentRed, compact = true)
-                        }
-                    }
-                },
             ) {
                 Column(modifier = Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -339,14 +331,6 @@ fun FieldDiagnosticsScreen(
                 badgeText = "${state.programmingModeDevices.size} LED",
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 headerActions = {
-                    if (state.isSimulatorActive) {
-                        val testIa = IndividualAddress(1, 1, 15)
-                        DesktopButton(
-                            text = "Sim LED 1.1.15",
-                            onClick = { controller.toggleSimulatedProgrammingLed(testIa, testIa !in state.programmingModeDevices) },
-                            compact = true,
-                        )
-                    }
                     DesktopPrimaryButton(
                         text = if (state.isCheckingProgrammingMode) "Scanning..." else "Scan LEDs",
                         onClick = { ensureBus(); controller.scanProgrammingModeLeds() },

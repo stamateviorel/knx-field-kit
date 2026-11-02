@@ -144,25 +144,10 @@ fun ProjectExplorerScreen(
                     color = WorkbenchColors.AccentSky,
                     compact = true,
                 )
-                DesktopButton(
-                    text = "Demo",
-                    icon = Icons.Default.HomeWork,
-                    onClick = controller::loadDemoProject,
-                    compact = true,
-                )
-                DesktopButton(
-                    text = "ETS6 Encrypted Sample",
-                    icon = Icons.Default.Key,
-                    onClick = {
-                        val sample = File(System.getProperty("java.io.tmpdir"), "penthouse_ets6_sample.knxproj")
-                        controller.generateAndPromptEncryptedSample(sample, samplePassword = "knx2026")
-                    },
-                    compact = true,
-                )
 
-                state.recentFiles.take(1).forEach { rf ->
+                state.recentFiles.take(2).forEach { rf ->
                     DesktopButton(
-                        text = rf.name.take(18),
+                        text = rf.name.take(24),
                         icon = Icons.Default.History,
                         onClick = { controller.openProjectOrKeyringFile(rf) },
                         compact = true,
@@ -849,10 +834,7 @@ private fun ExplorerCenterDataGrid(
                         )
                         DesktopButton(
                             text = "Ping",
-                            onClick = {
-                                if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-                                controller.pingIndividualDevice(dev.address.toString())
-                            },
+                            onClick = { controller.pingIndividualDevice(dev.address.toString()) },
                             compact = true,
                         )
                     }
@@ -896,10 +878,7 @@ private fun DeviceComObjectsGridPanel(
             DesktopPrimaryButton(
                 text = "Ping DD0",
                 icon = Icons.Default.NetworkCheck,
-                onClick = {
-                    if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-                    controller.pingIndividualDevice(dev.address.toString())
-                },
+                onClick = { controller.pingIndividualDevice(dev.address.toString()) },
                 compact = true,
             )
             DesktopButton(
@@ -1058,10 +1037,7 @@ private fun GroupAddressesGridPanel(
             DesktopPrimaryButton(
                 text = if (state.isPollingBatch) "Polling..." else "Poll All",
                 icon = Icons.Default.Sync,
-                onClick = {
-                    if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-                    controller.pollAllProjectGroupAddresses()
-                },
+                onClick = controller::pollAllProjectGroupAddresses,
                 enabled = !state.isPollingBatch,
                 compact = true,
             )
@@ -1163,36 +1139,33 @@ private fun InlineGroupQuickControls(
     controller: AppController,
     ultraCompact: Boolean,
 ) {
-    fun ensureBus() {
-        if (state.connectionState !is ConnectionState.Connected) controller.connectSimulator()
-    }
     val addrStr = ga.toString()
     when (DptCodec.resolveMainDpt(dpt)) {
         MainDpt.DPT_1_BOOL -> {
-            DesktopPrimaryButton("ON", onClick = { ensureBus(); controller.writeGroupSwitch(addrStr, true) }, compact = true)
-            DesktopButton("OFF", onClick = { ensureBus(); controller.writeGroupSwitch(addrStr, false) }, compact = true)
+            DesktopPrimaryButton("ON", onClick = { controller.writeGroupSwitch(addrStr, true) }, compact = true)
+            DesktopButton("OFF", onClick = { controller.writeGroupSwitch(addrStr, false) }, compact = true)
         }
         MainDpt.DPT_5_PERCENT, MainDpt.DPT_5_UNSIGNED -> {
-            DesktopButton("0%", onClick = { ensureBus(); controller.writeGroupPercent(addrStr, 0.0) }, compact = true)
+            DesktopButton("0%", onClick = { controller.writeGroupPercent(addrStr, 0.0) }, compact = true)
             if (!ultraCompact) {
-                DesktopButton("50%", onClick = { ensureBus(); controller.writeGroupPercent(addrStr, 50.0) }, compact = true)
+                DesktopButton("50%", onClick = { controller.writeGroupPercent(addrStr, 50.0) }, compact = true)
             }
-            DesktopPrimaryButton("100%", onClick = { ensureBus(); controller.writeGroupPercent(addrStr, 100.0) }, compact = true)
+            DesktopPrimaryButton("100%", onClick = { controller.writeGroupPercent(addrStr, 100.0) }, compact = true)
         }
         MainDpt.DPT_3_DIM_STEP -> {
-            DesktopButton("-25%", onClick = { ensureBus(); controller.writeGroupDimStep(addrStr, false, 3) }, compact = true)
-            DesktopButton("+25%", onClick = { ensureBus(); controller.writeGroupDimStep(addrStr, true, 3) }, compact = true)
+            DesktopButton("-25%", onClick = { controller.writeGroupDimStep(addrStr, false, 3) }, compact = true)
+            DesktopButton("+25%", onClick = { controller.writeGroupDimStep(addrStr, true, 3) }, compact = true)
         }
         MainDpt.DPT_17_SCENE -> {
-            DesktopButton("S1", onClick = { ensureBus(); controller.writeGroupScene(addrStr, 1) }, compact = true)
+            DesktopButton("S1", onClick = { controller.writeGroupScene(addrStr, 1) }, compact = true)
             if (!ultraCompact) {
-                DesktopButton("S2", onClick = { ensureBus(); controller.writeGroupScene(addrStr, 2) }, compact = true)
+                DesktopButton("S2", onClick = { controller.writeGroupScene(addrStr, 2) }, compact = true)
             }
         }
         else -> Unit
     }
     if (!ultraCompact) {
-        DesktopButton("Read", onClick = { ensureBus(); controller.readGroupAddress(addrStr) }, compact = true)
+        DesktopButton("Read", onClick = { controller.readGroupAddress(addrStr) }, compact = true)
     }
 }
 
