@@ -176,4 +176,19 @@ data class KnxProject(
         }
         return null
     }
+
+    fun findLocationStackForDevice(address: IndividualAddress): List<BuildingLocation>? {
+        fun search(loc: BuildingLocation, stack: List<BuildingLocation>): List<BuildingLocation>? {
+            val current = stack + loc
+            if (address in loc.deviceAddresses) return current
+            for (child in loc.children) {
+                search(child, current)?.let { return it }
+            }
+            return null
+        }
+        for (root in locations) {
+            search(root, emptyList())?.let { return it }
+        }
+        return null
+    }
 }

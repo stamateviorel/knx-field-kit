@@ -61,40 +61,40 @@ data class MobileColorScheme(
 )
 
 val MobileDarkPalette = MobileColorScheme(
-    bgCanvas = Color(0xFF111318),
-    bgTopBar = Color(0xFF191C20),
-    bgCard = Color(0xFF1D2024),
-    bgCardElevated = Color(0xFF282A2F),
-    bgInput = Color(0xFF23262B),
-    borderSubtle = Color(0xFF33353A),
-    borderStrong = Color(0xFF44474E),
-    textPrimary = Color(0xFFE2E2E9),
-    textSecondary = Color(0xFFC4C6D0),
-    textMuted = Color(0xFF8E9099),
+    bgCanvas = Color(0xFF101413),
+    bgTopBar = Color(0xFF101413),
+    bgCard = Color(0xFF191C1B),
+    bgCardElevated = Color(0xFF1D201F),
+    bgInput = Color(0xFF272A29),
+    borderSubtle = Color(0xFF2E3130),
+    borderStrong = Color(0xFF414944),
+    textPrimary = Color(0xFFE1E3DF),
+    textSecondary = Color(0xFFC0C9C2),
+    textMuted = Color(0xFF8A938C),
     accentEmerald = Color(0xFF7DD9BC),
-    accentSky = Color(0xFFA8C7FA),
-    accentAmber = Color(0xFFFFB951),
+    accentSky = Color(0xFFB1CCBE),
+    accentAmber = Color(0xFFF5BE48),
     accentRed = Color(0xFFFFB4AB),
-    accentPurple = Color(0xFFD0BCFF),
+    accentPurple = Color(0xFFB8C8DA),
     isDark = true,
 )
 
 val MobileLightPalette = MobileColorScheme(
-    bgCanvas = Color(0xFFF9F9FF),
-    bgTopBar = Color(0xFFFFFFFF),
+    bgCanvas = Color(0xFFF8FAF6),
+    bgTopBar = Color(0xFFF8FAF6),
     bgCard = Color(0xFFFFFFFF),
-    bgCardElevated = Color(0xFFF3F3FA),
-    bgInput = Color(0xFFEDEDF4),
-    borderSubtle = Color(0xFFE2E2E9),
-    borderStrong = Color(0xFFC4C6D0),
-    textPrimary = Color(0xFF191C20),
-    textSecondary = Color(0xFF44474E),
-    textMuted = Color(0xFF74777F),
+    bgCardElevated = Color(0xFFEDF1EC),
+    bgInput = Color(0xFFE7EBE6),
+    borderSubtle = Color(0xFFE0E4DF),
+    borderStrong = Color(0xFFC0C5BF),
+    textPrimary = Color(0xFF191C1A),
+    textSecondary = Color(0xFF414944),
+    textMuted = Color(0xFF717973),
     accentEmerald = Color(0xFF006C4C),
-    accentSky = Color(0xFF0B57D0),
-    accentAmber = Color(0xFF7A5900),
+    accentSky = Color(0xFF4A635B),
+    accentAmber = Color(0xFF7B5800),
     accentRed = Color(0xFFBA1A1A),
-    accentPurple = Color(0xFF6750A4),
+    accentPurple = Color(0xFF50606E),
     isDark = false,
 )
 
@@ -135,33 +135,53 @@ fun MobileFieldKitTheme(
     val colorScheme = if (isDark) {
         darkColorScheme(
             primary = palette.accentEmerald,
+            onPrimary = Color(0xFF003825),
+            primaryContainer = Color(0xFF005138),
+            onPrimaryContainer = Color(0xFF9CF2D8),
             secondary = palette.accentSky,
+            onSecondary = Color(0xFF1C352B),
+            secondaryContainer = Color(0xFF334B41),
+            onSecondaryContainer = Color(0xFFCDE8DA),
             tertiary = palette.accentAmber,
+            onTertiary = Color(0xFF412D00),
+            tertiaryContainer = Color(0xFF5D4200),
+            onTertiaryContainer = Color(0xFFFFDF9E),
             background = palette.bgCanvas,
-            surface = palette.bgCard,
-            surfaceVariant = palette.bgCardElevated,
-            onPrimary = Color(0xFF042F2E),
             onBackground = palette.textPrimary,
+            surface = palette.bgCard,
             onSurface = palette.textPrimary,
+            surfaceVariant = palette.bgCardElevated,
             onSurfaceVariant = palette.textSecondary,
-            outline = palette.borderSubtle,
-            outlineVariant = palette.borderStrong,
+            surfaceContainer = palette.bgCardElevated,
+            surfaceContainerHigh = palette.bgInput,
+            outline = palette.borderStrong,
+            outlineVariant = palette.borderSubtle,
             error = palette.accentRed,
         )
     } else {
         lightColorScheme(
             primary = palette.accentEmerald,
-            secondary = palette.accentSky,
-            tertiary = palette.accentAmber,
-            background = palette.bgCanvas,
-            surface = palette.bgCard,
-            surfaceVariant = palette.bgCardElevated,
             onPrimary = Color.White,
+            primaryContainer = Color(0xFF9CF2D8),
+            onPrimaryContainer = Color(0xFF002114),
+            secondary = palette.accentSky,
+            onSecondary = Color.White,
+            secondaryContainer = Color(0xFFCDE8DA),
+            onSecondaryContainer = Color(0xFF072019),
+            tertiary = palette.accentAmber,
+            onTertiary = Color.White,
+            tertiaryContainer = Color(0xFFFFDF9E),
+            onTertiaryContainer = Color(0xFF261900),
+            background = palette.bgCanvas,
             onBackground = palette.textPrimary,
+            surface = palette.bgCard,
             onSurface = palette.textPrimary,
+            surfaceVariant = palette.bgCardElevated,
             onSurfaceVariant = palette.textSecondary,
-            outline = palette.borderSubtle,
-            outlineVariant = palette.borderStrong,
+            surfaceContainer = palette.bgCardElevated,
+            surfaceContainerHigh = palette.bgInput,
+            outline = palette.borderStrong,
+            outlineVariant = palette.borderSubtle,
             error = palette.accentRed,
         )
     }
@@ -234,18 +254,14 @@ fun MobileComFlagsStrip(flags: ComObjectFlags, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         for ((letter, enabled) in entries) {
-            val fg = if (enabled) {
-                if (letter == "R" || letter == "T") MobileColors.AccentEmerald else MobileColors.AccentSky
-            } else {
-                MobileColors.TextMuted.copy(alpha = 0.55f)
-            }
-            val bg = if (enabled) fg.copy(alpha = 0.16f) else MobileColors.BgInput
-            val border = if (enabled) fg.copy(alpha = 0.5f) else MobileColors.BorderSubtle
+            val fg = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            val bg = if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+            val border = if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant
             Box(
                 modifier = Modifier
                     .background(bg, RoundedCornerShape(4.dp))
                     .border(1.dp, border, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -301,25 +317,25 @@ fun MobileSearchField(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MobileColors.BgInput,
-        border = BorderStroke(1.dp, MobileColors.BorderSubtle),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier
             .fillMaxWidth()
-            .height(42.dp),
+            .height(46.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
-                tint = MobileColors.TextSecondary,
-                modifier = Modifier.size(17.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(19.dp),
             )
             Box(
                 modifier = Modifier.weight(1f),
@@ -328,8 +344,8 @@ fun MobileSearchField(
                 if (value.isEmpty()) {
                     Text(
                         text = placeholder,
-                        fontSize = 12.sp,
-                        color = MobileColors.TextMuted,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -340,9 +356,9 @@ fun MobileSearchField(
                     singleLine = true,
                     textStyle = TextStyle(
                         fontSize = 13.sp,
-                        color = MobileColors.TextPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                     ),
-                    cursorBrush = SolidColor(MobileColors.AccentEmerald),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -350,9 +366,9 @@ fun MobileSearchField(
                 Icon(
                     imageVector = Icons.Default.Clear,
                     contentDescription = "Clear",
-                    tint = MobileColors.TextSecondary,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .size(16.dp)
+                        .size(18.dp)
                         .clickable { onValueChange("") },
                 )
             }

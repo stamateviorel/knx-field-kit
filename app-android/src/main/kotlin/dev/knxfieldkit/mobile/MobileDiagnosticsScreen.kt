@@ -347,7 +347,7 @@ fun MobileDiagnosticsScreen(
                         )
                         Button(
                             onClick = { controller.scanProgrammingModeLeds() },
-                            colors = ButtonDefaults.buttonColors(containerColor = MobileColors.AccentSky, contentColor = Color(0xFF082F49)),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth(),
                         ) {

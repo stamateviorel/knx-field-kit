@@ -48,142 +48,117 @@ fun MobileFieldApp(
                 .background(MobileColors.BgCanvas),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Compact Industrial Mobile Top Header
-                Surface(
-                    color = MobileColors.BgTopBar,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column {
-                        Row(
+                // Official Material 3 Top App Bar
+                @OptIn(ExperimentalMaterial3Api::class)
+                TopAppBar(
+                    title = {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                .clickable { showProjectSheet = true }
                         ) {
-                            // Emerald KNX Mark
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MobileColors.AccentEmerald.copy(alpha = 0.2f))
-                                    .border(1.dp, MobileColors.AccentEmerald, RoundedCornerShape(8.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "KNX",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MobileColors.AccentEmerald,
-                                )
-                            }
-
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { showProjectSheet = true },
-                            ) {
-                                Text(
-                                    text = state.project?.name ?: "KNX Field Kit",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MobileColors.TextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                val proj = state.project
-                                Text(
-                                    text = if (proj != null) {
-                                        "${proj.allDevices.size} Dev • ${proj.groupAddresses.size} GA • ${proj.etsVersion.ifBlank { "ETS" }}"
-                                    } else {
-                                        "Tap to open .knxproj / .knxkeys"
-                                    },
-                                    fontSize = 10.sp,
-                                    color = MobileColors.TextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-
-                            // Live Bus Connection Pill
-                            val isConnected = state.connectionState is ConnectionState.Connected
-                            val connColor = when {
-                                state.isSimulatorActive -> MobileColors.AccentEmerald
-                                isConnected -> MobileColors.AccentSky
-                                state.connectionState is ConnectionState.Error -> MobileColors.AccentRed
-                                else -> MobileColors.TextSecondary
-                            }
-                            val connLabel = when {
-                                state.isSimulatorActive -> "Sim Bus"
-                                isConnected -> "IP Live"
-                                state.connectionState is ConnectionState.Connecting -> "Linking"
-                                else -> "Connect"
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(connColor.copy(alpha = 0.16f))
-                                    .border(1.dp, connColor.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                                    .clickable { controller.toggleConnectDialog(true) }
-                                    .padding(horizontal = 9.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            ) {
+                            Text(
+                                text = state.project?.name ?: "KNX Field Kit",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val proj = state.project
+                            Text(
+                                text = if (proj != null) {
+                                    "${proj.allDevices.size} dev • ${proj.groupAddresses.size} GA • ${proj.etsVersion.ifBlank { "ETS" }}"
+                                } else {
+                                    "Tap to open .knxproj / .knxkeys"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 12.dp, end = 8.dp)
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "KNX",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    },
+                    actions = {
+                        // Connection Status (M3 AssistChip)
+                        val isConnected = state.connectionState is ConnectionState.Connected
+                        val statusDotColor = when {
+                            state.isSimulatorActive || isConnected -> MaterialTheme.colorScheme.primary
+                            state.connectionState is ConnectionState.Error -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.outline
+                        }
+                        val statusText = when {
+                            state.isSimulatorActive -> "Sim"
+                            isConnected -> "Live IP"
+                            state.connectionState is ConnectionState.Connecting -> "Linking"
+                            else -> "Connect"
+                        }
+                        AssistChip(
+                            onClick = { controller.toggleConnectDialog(true) },
+                            label = { Text(statusText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = {
                                 Box(
                                     modifier = Modifier
-                                        .size(7.dp)
+                                        .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(connColor),
+                                        .background(statusDotColor)
                                 )
-                                Text(
-                                    text = connLabel,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = connColor,
-                                )
-                            }
+                            },
+                            modifier = Modifier.height(32.dp),
+                            border = AssistChipDefaults.assistChipBorder(
+                                enabled = true,
+                                borderColor = MaterialTheme.colorScheme.outlineVariant,
+                            ),
+                        )
 
-                            // Theme Switcher Button (Dark / Light / Auto)
-                            IconButton(
-                                onClick = controller::toggleThemeMode,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MobileColors.BgCardElevated),
-                            ) {
-                                val themeIcon = when (state.themeMode) {
-                                    ThemeMode.DARK -> Icons.Default.DarkMode
-                                    ThemeMode.LIGHT -> Icons.Default.LightMode
-                                    ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
-                                }
-                                Icon(
-                                    imageVector = themeIcon,
-                                    contentDescription = "Theme: ${state.themeMode.label}",
-                                    tint = MobileColors.AccentAmber,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
+                        Spacer(Modifier.width(2.dp))
 
-                            // Project / File Picker Menu Icon
-                            IconButton(
-                                onClick = { showProjectSheet = true },
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MobileColors.BgCardElevated),
-                            ) {
-                                Icon(
-                                    Icons.Default.FolderOpen,
-                                    contentDescription = "Project & Files",
-                                    tint = MobileColors.AccentSky,
-                                    modifier = Modifier.size(18.dp),
-                                )
+                        // Theme Toggle
+                        IconButton(onClick = controller::toggleThemeMode) {
+                            val themeIcon = when (state.themeMode) {
+                                ThemeMode.DARK -> Icons.Default.DarkMode
+                                ThemeMode.LIGHT -> Icons.Default.LightMode
+                                ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
                             }
+                            Icon(
+                                imageVector = themeIcon,
+                                contentDescription = "Theme: ${state.themeMode.label}",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        HorizontalDivider(color = MobileColors.BorderSubtle)
-                    }
-                }
+
+                        // Project / File Picker
+                        IconButton(onClick = { showProjectSheet = true }) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = "Project Files",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    )
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                 // Active Walk-Test High-Visibility Strip
                 if (state.walkTestActive) {
@@ -262,15 +237,15 @@ fun MobileFieldApp(
                         text = "${state.telegrams.size} frm",
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = MobileColors.AccentSky,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
-                // Thumb-Friendly Bottom Navigation Bar
-                HorizontalDivider(color = MobileColors.BorderSubtle)
+                // Authentic Android Material 3 Navigation Bar
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 NavigationBar(
-                    containerColor = MobileColors.BgTopBar,
-                    tonalElevation = 0.dp,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 2.dp,
                 ) {
                     val navItems = listOf(
                         Triple(AppTab.PROJECT, "Explorer", Icons.Default.AccountTree),
@@ -287,23 +262,23 @@ fun MobileFieldApp(
                                 Icon(
                                     imageVector = icon,
                                     contentDescription = label,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(22.dp),
                                 )
                             },
                             label = {
                                 Text(
                                     text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                     maxLines = 1,
                                 )
                             },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MobileColors.AccentEmerald,
-                                selectedTextColor = MobileColors.AccentEmerald,
-                                indicatorColor = MobileColors.AccentEmerald.copy(alpha = 0.16f),
-                                unselectedIconColor = MobileColors.TextSecondary,
-                                unselectedTextColor = MobileColors.TextSecondary,
+                                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
                         )
                     }

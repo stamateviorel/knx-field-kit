@@ -76,7 +76,9 @@ class MainActivity : ComponentActivity() {
         )
 
         // Handle .knxproj / .knxkeys tapped directly from Files, WhatsApp, Drive, or Email
-        if (intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND) {
+        val hasFilePayload = (intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND) &&
+            (intent.data != null || intent.clipData != null || intent.hasExtra(Intent.EXTRA_STREAM))
+        if (hasFilePayload) {
             handleIncomingFileIntent(intent)
         } else {
             // Auto-open last imported project if no project is active
@@ -157,8 +159,23 @@ class MainActivity : ComponentActivity() {
         if (nav != null) {
             when {
                 nav == "groups" -> controller.selectExplorerNode(ExplorerSelection.AllGroupAddresses)
-                nav.startsWith("group:") -> controller.selectExplorerNode(ExplorerSelection.GroupRange(nav.removePrefix("group:")))
+                nav.startsWith("group:") -> {
+                    val key = nav.removePrefix("group:")
+                    val proj = controller.uiState.value.project
+                    val range = proj?.effectiveGroupRanges?.firstOrNull { it.id == key || it.prefixLabel == key || it.name.equals(key, ignoreCase = true) }
+                        ?: proj?.effectiveGroupRanges?.flatMap { it.children }?.firstOrNull { it.id == key || it.prefixLabel == key || it.name.equals(key, ignoreCase = true) }
+                    if (range != null) {
+                        controller.selectExplorerNode(ExplorerSelection.GroupRange(range.id))
+                    } else {
+                        controller.selectExplorerNode(ExplorerSelection.GroupRange(key))
+                    }
+                }
                 nav == "rooms" || nav == "buildings" -> controller.selectExplorerNode(ExplorerSelection.BuildingSpace("", "", "Root", emptyList()))
+                nav == "expand_all" || nav == "tree:all" -> controller.selectExplorerNode(ExplorerSelection.BuildingSpace("__ALL__", "__ALL__", "Tree", emptyList()))
+                nav.startsWith("building:") || nav.startsWith("space:") -> {
+                    val target = if (nav.startsWith("building:")) nav.removePrefix("building:") else nav.removePrefix("space:")
+                    controller.selectExplorerNode(ExplorerSelection.BuildingSpace(target, target, "Space", emptyList()))
+                }
                 nav == "topology" || nav == "root" -> controller.selectExplorerNode(ExplorerSelection.TopologyRoot)
                 nav.startsWith("area:") -> {
                     val a = nav.removePrefix("area:").toIntOrNull() ?: 0

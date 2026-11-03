@@ -443,7 +443,7 @@ class AppController(
                 projectSourceLabel = label,
                 recentFiles = updatedRecent ?: it.recentFiles,
                 passwordPrompt = null,
-                explorerSelection = ExplorerSelection.TopologyRoot,
+                explorerSelection = if (it.explorerSelection is ExplorerSelection.BuildingSpace || it.explorerSelection is ExplorerSelection.AllGroupAddresses || it.explorerSelection is ExplorerSelection.GroupRange) it.explorerSelection else ExplorerSelection.TopologyRoot,
                 selectedGroupAddressInput = firstGa,
                 selectedDeviceAddress = firstDev,
                 selectedInspectorGroup = null,
