@@ -31,6 +31,7 @@ import dev.knxfieldkit.model.GroupAddressInfo
 fun MobileFieldApp(
     controller: AppController,
     modifier: Modifier = Modifier,
+    initialDiagTab: EtsDiagnosticsTab = EtsDiagnosticsTab.LINE_DIAGNOSTICS,
     onOpenProjectFile: () -> Unit = {},
     onShareHtmlReport: () -> Unit = {},
     onShareMonitorCsv: () -> Unit = {},
@@ -204,7 +205,9 @@ fun MobileFieldApp(
                         AppTab.DIAGNOSTICS -> MobileDiagnosticsScreen(
                             state = state,
                             controller = controller,
+                            initialTab = initialDiagTab,
                             onShareHtmlReport = onShareHtmlReport,
+                            onShareMarkdownSummary = onShareMarkdownSummary,
                         )
                     }
                 }

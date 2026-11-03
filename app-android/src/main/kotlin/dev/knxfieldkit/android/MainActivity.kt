@@ -23,6 +23,7 @@ import dev.knxfieldkit.app.ThemeMode
 import dev.knxfieldkit.app.UserPrefsStore
 import dev.knxfieldkit.bus.PureKnxNetIpClient
 import dev.knxfieldkit.model.IndividualAddress
+import dev.knxfieldkit.mobile.EtsDiagnosticsTab
 import dev.knxfieldkit.mobile.MobileFieldApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
 
     private var multicastLock: WifiManager.MulticastLock? = null
     private lateinit var controller: AppController
+    private val activeDiagTab = androidx.compose.runtime.mutableStateOf(EtsDiagnosticsTab.LINE_DIAGNOSTICS)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,6 +104,7 @@ class MainActivity : ComponentActivity() {
             MobileFieldApp(
                 controller = controller,
                 modifier = Modifier.safeDrawingPadding(),
+                initialDiagTab = activeDiagTab.value,
                 onOpenProjectFile = {
                     openDocumentLauncher.launch(arrayOf("*/*"))
                 },
@@ -145,6 +148,15 @@ class MainActivity : ComponentActivity() {
                 "SENDER" -> controller.selectTab(AppTab.SENDER)
                 "DIAGNOSTICS" -> controller.selectTab(AppTab.DIAGNOSTICS)
                 "PROJECT", "EXPLORER" -> controller.selectTab(AppTab.PROJECT)
+            }
+        }
+        val diagTab = intent.getStringExtra("diag_tab")
+        if (diagTab != null) {
+            when (diagTab.uppercase()) {
+                "LINE", "LINE_DIAGNOSTICS", "LINESCAN" -> activeDiagTab.value = EtsDiagnosticsTab.LINE_DIAGNOSTICS
+                "DEVICE", "DEVICE_INFO", "INFO" -> activeDiagTab.value = EtsDiagnosticsTab.DEVICE_INFO
+                "PROG", "PROG_MODE", "PROGRAMMING" -> activeDiagTab.value = EtsDiagnosticsTab.PROGRAMMING_MODE
+                "SITE", "REPORT", "COMMISSIONING" -> activeDiagTab.value = EtsDiagnosticsTab.SITE_COMMISSIONING
             }
         }
         val theme = intent.getStringExtra("theme")

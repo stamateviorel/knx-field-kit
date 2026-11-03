@@ -276,9 +276,10 @@ class AppControllerTest {
     fun androidMobileFieldAppRendersAllPhoneScreensCleanly() = runBlocking {
         val controller = AppController()
         val screenshotDir = System.getProperty("knx.screenshot.dir")?.let(::File)?.apply { mkdirs() }
+        val diagTabState = androidx.compose.runtime.mutableStateOf(dev.knxfieldkit.mobile.EtsDiagnosticsTab.LINE_DIAGNOSTICS)
         // 412x915 dp Android flagship phone viewport @ 2x density -> 824x1830 px
         val scene = ImageComposeScene(width = 824, height = 1830, density = Density(2f)) {
-            MobileFieldApp(controller = controller)
+            MobileFieldApp(controller = controller, initialDiagTab = diagTabState.value)
         }
         try {
             controller.loadDemoProject()
@@ -346,10 +347,29 @@ class AppControllerTest {
             delay(80L)
             renderMobile("knx-android-sender.png")
 
-            // 5. Mobile Field Diagnostics & Readiness Score
+            // 5. Mobile Field Diagnostics — Full ETS Suite
             controller.selectTab(AppTab.DIAGNOSTICS)
-            delay(80L)
+            diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.LINE_DIAGNOSTICS
+            delay(100L)
             renderMobile("knx-android-diagnostics.png")
+            renderMobile("phone-ets-diagnostics-line.png")
+
+            // 5b. ETS Device Info & BCU Properties Readout
+            controller.inspectDeviceDiagnostics("1.1.20")
+            diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.DEVICE_INFO
+            delay(100L)
+            renderMobile("phone-ets-diagnostics-device.png")
+
+            // 5c. ETS Programming Mode & Safe Address Writer
+            controller.scanProgrammingModeLeds()
+            diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.PROGRAMMING_MODE
+            delay(100L)
+            renderMobile("phone-ets-diagnostics-progmode.png")
+
+            // 5d. ETS Site Commissioning & Handover Report
+            diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.SITE_COMMISSIONING
+            delay(100L)
+            renderMobile("phone-ets-diagnostics-report.png")
 
             // 6. Mobile Wi-Fi KNXnet/IP Gateway Connect Bottom Sheet
             controller.discoverGateways()
@@ -373,6 +393,11 @@ class AppControllerTest {
             controller.selectTab(AppTab.MONITOR)
             delay(80L)
             renderMobile("knx-android-monitor-light.png")
+
+            controller.selectTab(AppTab.DIAGNOSTICS)
+            diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.LINE_DIAGNOSTICS
+            delay(80L)
+            renderMobile("phone-ets-diagnostics-light.png")
         } finally {
             scene.close()
             controller.close()
