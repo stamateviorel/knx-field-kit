@@ -39,6 +39,7 @@ fun MobileFieldApp(
 ) {
     val state by controller.uiState.collectAsState()
     var showProjectSheet by remember { mutableStateOf(false) }
+    var showFastCommander by remember { mutableStateOf(false) }
     var inspectedGroup by remember { mutableStateOf<GroupAddressInfo?>(null) }
     var inspectedTelegram by remember { mutableStateOf<EnrichedTelegram?>(null) }
 
@@ -131,6 +132,15 @@ fun MobileFieldApp(
                         )
 
                         Spacer(Modifier.width(2.dp))
+
+                        // ETS Fast Commander (Schnell-Steuerung)
+                        IconButton(onClick = { showFastCommander = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = "Fast Commander (Schnell-Steuerung)",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
 
                         // Theme Toggle
                         IconButton(onClick = controller::toggleThemeMode) {
@@ -345,6 +355,14 @@ fun MobileFieldApp(
                     },
                     onLocateSender = { addr -> controller.locateDevice(addr) },
                     onDismiss = { inspectedTelegram = null },
+                )
+            }
+
+            if (showFastCommander) {
+                MobileFastCommanderSheet(
+                    state = state,
+                    controller = controller,
+                    onDismiss = { showFastCommander = false },
                 )
             }
         }

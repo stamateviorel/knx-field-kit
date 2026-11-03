@@ -19,7 +19,10 @@ data class BusHealthStats(
     val unansweredReadAddresses: List<GroupAddress>,
     val topSourceDevices: List<TalkerStat>,
     val topGroupAddresses: List<TalkerStat>
-)
+) {
+    val retryRatePercent: Double
+        get() = if (totalTelegrams > 0) (repeatedCount * 100.0 / totalTelegrams).coerceIn(0.0, 100.0) else 0.0
+}
 
 data class SiteCheckReport(
     val completedAtEpochMs: Long,

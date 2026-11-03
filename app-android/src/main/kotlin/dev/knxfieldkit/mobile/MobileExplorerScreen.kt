@@ -81,6 +81,45 @@ sealed interface BuildingTreeNode {
     ) : BuildingTreeNode
 }
 
+enum class TopologyViewMode(val label: String, val icon: ImageVector) {
+    TREE("Tree View", Icons.Default.AccountTree),
+    FOLDERS("Folders", Icons.Default.FolderOpen),
+}
+
+sealed interface TopologyTreeNode {
+    val id: String
+    val depth: Int
+
+    data class AreaNode(
+        override val id: String,
+        override val depth: Int,
+        val area: TopologyArea,
+        val isExpanded: Boolean,
+        val lineCount: Int,
+        val totalDevices: Int,
+    ) : TopologyTreeNode
+
+    data class LineNode(
+        override val id: String,
+        override val depth: Int,
+        val area: TopologyArea,
+        val line: TopologyLine,
+        val isExpanded: Boolean,
+        val deviceCount: Int,
+        val couplerAddress: IndividualAddress,
+        val couplerReachable: Boolean?,
+    ) : TopologyTreeNode
+
+    data class DeviceNode(
+        override val id: String,
+        override val depth: Int,
+        val device: ProjectDevice,
+        val line: TopologyLine,
+        val isOnline: Boolean?,
+        val isProgMode: Boolean,
+    ) : TopologyTreeNode
+}
+
 enum class GroupViewMode(val label: String, val icon: ImageVector) {
     TREE("Tree View", Icons.Default.AccountTree),
     FOLDERS("Folders", Icons.Default.FolderOpen),
@@ -146,6 +185,14 @@ fun MobileExplorerScreen(
     var expandedGroupIds by remember(project) {
         mutableStateOf(
             project?.effectiveGroupRanges?.firstOrNull()?.let { setOf(it.id) } ?: emptySet()
+        )
+    }
+    var topologyViewMode by remember { mutableStateOf(TopologyViewMode.TREE) }
+    var expandedTopologyIds by remember(project) {
+        mutableStateOf(
+            project?.areas?.firstOrNull()?.let { area ->
+                setOf("area-${area.area}") + (area.lines.firstOrNull()?.let { setOf("line-${it.id}") } ?: emptySet())
+            } ?: emptySet()
         )
     }
 
@@ -808,44 +855,237 @@ fun MobileExplorerScreen(
                         selectedAreaNumber = null
                     }
                 } else {
-                    // Level 0: Topology Areas Root
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        item(key = "topology-header") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "ETS TOPOLOGY — AREAS (${project.areas.size})",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = "${project.allDevices.size} devs • ${project.allLines.size} lines",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
+                    // Level 0: Topology Tree or Folders
+                    if (topologyViewMode == TopologyViewMode.TREE) {
+                        val visibleTopologyTreeNodes = remember(project.areas, project, expandedTopologyIds, state.deviceStatuses, state.programmingModeDevices) {
+                            flattenTopologyTree(project.areas, project, state, expandedTopologyIds)
                         }
 
-                        items(project.areas, key = { "area-${it.area}" }) { area ->
-                            MobileAreaCard(
-                                area = area,
-                                onClick = {
-                                    if (area.lines.size == 1) {
-                                        selectedAreaNumber = area.area
-                                        selectedLineId = area.lines.first().id
-                                    } else {
-                                        selectedAreaNumber = area.area
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            item(key = "topology-tree-toolbar") {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = "ETS TOPOLOGY TREE (${project.areas.size} Areas • ${project.allLines.size} Lines • ${project.allDevices.size} Devs)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            AssistChip(
+                                                onClick = {
+                                                    val all = mutableSetOf<String>()
+                                                    for (area in project.areas) {
+                                                        all += "area-${area.area}"
+                                                        area.lines.forEach { all += "line-${it.id}" }
+                                                    }
+                                                    expandedTopologyIds = all
+                                                },
+                                                label = { Text("Expand All", fontSize = 9.5.sp) },
+                                                leadingIcon = { Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(12.dp)) },
+                                                modifier = Modifier.height(26.dp),
+                                            )
+                                            AssistChip(
+                                                onClick = { expandedTopologyIds = emptySet() },
+                                                label = { Text("Collapse", fontSize = 9.5.sp) },
+                                                leadingIcon = { Icon(Icons.Default.UnfoldLess, null, modifier = Modifier.size(12.dp)) },
+                                                modifier = Modifier.height(26.dp),
+                                            )
+                                        }
                                     }
-                                },
-                            )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        // View Mode Toggle (Tree View vs Folders)
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        ) {
+                                            Row(modifier = Modifier.padding(2.dp)) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    ) {
+                                                        Icon(Icons.Default.AccountTree, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                                                        Text("Tree View", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                                    }
+                                                }
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = Color.Transparent,
+                                                    modifier = Modifier.clickable { topologyViewMode = TopologyViewMode.FOLDERS },
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    ) {
+                                                        Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        Text("Folders", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        FilledTonalButton(
+                                            onClick = {
+                                                project.areas.firstOrNull()?.lines?.firstOrNull()?.let { line ->
+                                                    controller.runProjectLineAudit(line.area, line.line)
+                                                    controller.selectTab(AppTab.DIAGNOSTICS)
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp),
+                                        ) {
+                                            Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Audit Lines", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                }
+                            }
+
+                            items(visibleTopologyTreeNodes, key = { it.id }) { node ->
+                                when (node) {
+                                    is TopologyTreeNode.AreaNode -> {
+                                        TopologyTreeAreaItem(
+                                            node = node,
+                                            onToggle = {
+                                                expandedTopologyIds = if (node.isExpanded) expandedTopologyIds - node.id else expandedTopologyIds + node.id
+                                            },
+                                            onSelectArea = {
+                                                selectedAreaNumber = node.area.area
+                                            },
+                                        )
+                                    }
+                                    is TopologyTreeNode.LineNode -> {
+                                        TopologyTreeLineItem(
+                                            node = node,
+                                            onToggle = {
+                                                expandedTopologyIds = if (node.isExpanded) expandedTopologyIds - node.id else expandedTopologyIds + node.id
+                                            },
+                                            onSelectLine = {
+                                                selectedAreaNumber = node.line.area
+                                                selectedLineId = node.line.id
+                                            },
+                                            onAuditLine = {
+                                                controller.runProjectLineAudit(node.line.area, node.line.line)
+                                                controller.selectTab(AppTab.DIAGNOSTICS)
+                                            },
+                                        )
+                                    }
+                                    is TopologyTreeNode.DeviceNode -> {
+                                        TopologyTreeDeviceItem(
+                                            node = node,
+                                            project = project,
+                                            onOpenObjects = { controller.openDeviceObjectsInExplorer(node.device.address) },
+                                            onPing = { controller.pingIndividualDevice(node.device.address.toString()) },
+                                            onLocate = { controller.locateDevice(node.device.address) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Folders View Mode
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            item(key = "topology-folders-header") {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = "ETS TOPOLOGY — AREAS (${project.areas.size})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            text = "${project.allDevices.size} devs • ${project.allLines.size} lines",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+
+                                    // View Mode Toggle (Tree View vs Folders)
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    ) {
+                                        Row(modifier = Modifier.padding(2.dp)) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = Color.Transparent,
+                                                modifier = Modifier.clickable { topologyViewMode = TopologyViewMode.TREE },
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Icon(Icons.Default.AccountTree, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text("Tree View", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.primary,
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                                                    Text("Folders", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            items(project.areas, key = { "area-${it.area}" }) { area ->
+                                MobileAreaCard(
+                                    area = area,
+                                    onClick = {
+                                        if (area.lines.size == 1) {
+                                            selectedAreaNumber = area.area
+                                            selectedLineId = area.lines.first().id
+                                        } else {
+                                            selectedAreaNumber = area.area
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -4270,6 +4510,461 @@ private fun GroupTreeLeafItem(
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(10.dp))
                         Spacer(Modifier.width(2.dp))
                         Text("Read", fontSize = 9.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun flattenTopologyTree(
+    areas: List<TopologyArea>,
+    project: KnxProject,
+    state: AppUiState,
+    expandedIds: Set<String>,
+): List<TopologyTreeNode> {
+    val result = mutableListOf<TopologyTreeNode>()
+    for (area in areas) {
+        val areaId = "area-${area.area}"
+        val isAreaExpanded = areaId in expandedIds
+        val lineCount = area.lines.size
+        val totalDevices = area.lines.sumOf { it.devices.size }
+        result += TopologyTreeNode.AreaNode(
+            id = areaId,
+            depth = 0,
+            area = area,
+            isExpanded = isAreaExpanded,
+            lineCount = lineCount,
+            totalDevices = totalDevices,
+        )
+
+        if (isAreaExpanded) {
+            for (line in area.lines) {
+                val lineId = "line-${line.id}"
+                val isLineExpanded = lineId in expandedIds
+                val couplerAddr = IndividualAddress(line.area, line.line, 0)
+                val couplerReachable = state.deviceStatuses[couplerAddr]?.reachable
+
+                result += TopologyTreeNode.LineNode(
+                    id = lineId,
+                    depth = 1,
+                    area = area,
+                    line = line,
+                    isExpanded = isLineExpanded,
+                    deviceCount = line.devices.size,
+                    couplerAddress = couplerAddr,
+                    couplerReachable = couplerReachable,
+                )
+
+                if (isLineExpanded) {
+                    for (dev in line.devices) {
+                        val devId = "dev-${dev.address.raw}"
+                        val isOnline = state.deviceStatuses[dev.address]?.reachable
+                        val isProg = dev.address in state.programmingModeDevices
+                        result += TopologyTreeNode.DeviceNode(
+                            id = devId,
+                            depth = 2,
+                            device = dev,
+                            line = line,
+                            isOnline = isOnline,
+                            isProgMode = isProg,
+                        )
+                    }
+                }
+            }
+        }
+    }
+    return result
+}
+
+@Composable
+private fun TopologyTreeAreaItem(
+    node: TopologyTreeNode.AreaNode,
+    onToggle: () -> Unit,
+    onSelectArea: () -> Unit,
+) {
+    OutlinedCard(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = if (node.isExpanded) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Layers,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Text(
+                            text = "Area ${node.area.area}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
+
+                    Text(
+                        text = node.area.name.ifBlank { "Backbone / Area" },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Text(
+                    text = "${node.lineCount} lines • ${node.totalDevices} devices",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(
+                    onClick = onSelectArea,
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.OpenInNew,
+                        contentDescription = "Drill into area",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Icon(
+                    imageVector = if (node.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopologyTreeLineItem(
+    node: TopologyTreeNode.LineNode,
+    onToggle: () -> Unit,
+    onSelectLine: () -> Unit,
+    onAuditLine: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "├── ",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        OutlinedCard(
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.outlinedCardColors(
+                containerColor = if (node.isExpanded) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            modifier = Modifier.weight(1f).clickable(onClick = onToggle),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Router,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.secondary,
+                        ) {
+                            Text(
+                                text = "Line ${node.line.id}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondary,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Text(
+                                text = node.line.mediumType,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                            )
+                        }
+
+                        Text(
+                            text = node.line.name.ifBlank { "Line ${node.line.id}" },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "${node.deviceCount} devices",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.5.sp,
+                        )
+                        node.couplerReachable?.let { online ->
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                            )
+                            Text(
+                                text = if (online) "Coupler online" else "Coupler offline",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.5.sp,
+                                color = if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    FilledTonalButton(
+                        onClick = onAuditLine,
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("Audit", fontSize = 9.5.sp)
+                    }
+
+                    IconButton(
+                        onClick = onSelectLine,
+                        modifier = Modifier.size(26.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Launch,
+                            contentDescription = "Drill into line",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+
+                    Icon(
+                        imageVector = if (node.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopologyTreeDeviceItem(
+    node: TopologyTreeNode.DeviceNode,
+    project: KnxProject,
+    onOpenObjects: () -> Unit,
+    onPing: () -> Unit,
+    onLocate: () -> Unit,
+) {
+    val dev = node.device
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "│   └── ",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        OutlinedCard(
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.outlinedCardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.weight(1f).clickable(onClick = onOpenObjects),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Text(
+                                text = dev.address.toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        }
+
+                        if (node.isProgMode) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.errorContainer,
+                            ) {
+                                Text(
+                                    text = "PROG",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = dev.name.ifBlank { dev.productName.ifBlank { "Device ${dev.address}" } },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    // Online Status Dot
+                    node.isOnline?.let { online ->
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (online) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                        ) {
+                            Text(
+                                text = if (online) "ONLINE" else "OFFLINE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (online) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Subtitle: Product name / Order number + Communication Objects count
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "${dev.productName.ifBlank { dev.orderNumber }} • ${dev.comObjects.size} objects",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            onClick = onPing,
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 1.dp),
+                            modifier = Modifier.height(22.dp),
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(10.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("Ping", fontSize = 9.sp)
+                        }
+
+                        FilledTonalButton(
+                            onClick = onLocate,
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 1.dp),
+                            modifier = Modifier.height(22.dp),
+                        ) {
+                            Icon(Icons.Default.SettingsRemote, contentDescription = null, modifier = Modifier.size(10.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("Flash LED", fontSize = 9.sp)
+                        }
                     }
                 }
             }

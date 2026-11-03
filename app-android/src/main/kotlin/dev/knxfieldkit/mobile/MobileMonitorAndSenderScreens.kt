@@ -119,10 +119,15 @@ fun MobileMonitorScreen(
                 accent = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.weight(1f),
             )
+            val retryColor = when {
+                health.retryRatePercent > 4.0 -> MaterialTheme.colorScheme.error
+                health.repeatedCount > 0 -> MaterialTheme.colorScheme.tertiary
+                else -> MaterialTheme.colorScheme.primary
+            }
             MobileMetricTile(
-                label = "Ghost GA",
-                value = health.ghostGroupCount.toString(),
-                accent = if (health.ghostGroupCount > 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                label = "Retries",
+                value = if (health.repeatedCount > 0) "${String.format(Locale.US, "%.1f", health.retryRatePercent)}%" else "0%",
+                accent = retryColor,
                 modifier = Modifier.weight(1f),
             )
             MobileMetricTile(
@@ -131,6 +136,71 @@ fun MobileMonitorScreen(
                 accent = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        // Physical Signal Quality & Frame Retry Diagnostic Alert
+        val retryRate = health.retryRatePercent
+        val repeatedFrames = health.repeatedCount
+        if (retryRate > 4.0) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "TP1 PHYSICAL BUS INTEGRITY WARNING",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            text = "${String.format(Locale.US, "%.1f", retryRate)}% frame retries ($repeatedFrames repeated). Possible missing choke on PSU, cable reflection, or device collision.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 10.5.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
+        } else if (repeatedFrames > 0) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = "Minor TP1 retries: ${String.format(Locale.US, "%.1f", retryRate)}% ($repeatedFrames frames repeated). Bus operational.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+            }
         }
 
         // Interactive TP1 Bus Traffic Flow Visualizer Bar
@@ -448,7 +518,12 @@ fun MobileMonitorScreen(
                     FilterChip(
                         selected = state.monitorGhostOnly,
                         onClick = { controller.setMonitorGhostOnly(!state.monitorGhostOnly) },
-                        label = { Text("Ghost Only", fontSize = 10.sp) },
+                        label = {
+                            Text(
+                                text = if (health.ghostGroupCount > 0) "Ghost (${health.ghostGroupCount})" else "Ghost Only",
+                                fontSize = 10.sp,
+                            )
+                        },
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier.height(28.dp),
                     )
