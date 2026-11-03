@@ -703,6 +703,9 @@ class SimulatedKnxBusClient(
                 serialNumberHex = dev.serialHex,
                 manufacturerId = dev.manufacturerId,
                 programmingModeActive = dev.programmingMode,
+                macAddress = "00:50:C2:11:22:%02X".format(address.device),
+                ipAddress = "192.168.1.${100 + address.device}",
+                firmwareVersion = "v2.4",
                 loadState = "Loaded",
                 runState = "Running",
                 notes = listOf("Simulated BCU health OK"),
@@ -742,6 +745,82 @@ class SimulatedKnxBusClient(
         }
         dev.programmingMode = wasProg
         return true
+    }
+
+    override suspend fun readRawProperty(
+        address: IndividualAddress,
+        objectIndex: Int,
+        propertyId: Int,
+        timeoutMs: Long,
+    ): RawPropertyReadResult {
+        ensureConnected()
+        val dev = virtualDevices[address]
+        delay(30L)
+        if (dev == null || !dev.online) {
+            return RawPropertyReadResult(
+                address = address,
+                objectIndex = objectIndex,
+                propertyId = propertyId,
+                success = false,
+                errorMessage = "Device $address is offline or not responding",
+            )
+        }
+        val bytes = when (objectIndex) {
+            0 -> when (propertyId) {
+                11 -> HexBytes.fromHex(dev.serialHex)
+                12 -> byteArrayOf(((dev.manufacturerId ushr 8) and 0xFF).toByte(), (dev.manufacturerId and 0xFF).toByte())
+                54 -> byteArrayOf(if (dev.programmingMode) 0x01 else 0x00)
+                56 -> byteArrayOf(0x00, 0x50, 0xC2.toByte(), 0x11, 0x22, address.device.toByte())
+                58 -> byteArrayOf(192.toByte(), 168.toByte(), 1.toByte(), (100 + address.device).toByte())
+                78 -> "BCU-TP-07B0".toByteArray(Charsets.ISO_8859_1)
+                83 -> byteArrayOf(0x02, 0x04)
+                else -> byteArrayOf(0x00, 0x01)
+            }
+            else -> byteArrayOf(0x00)
+        }
+        return RawPropertyReadResult(
+            address = address,
+            objectIndex = objectIndex,
+            propertyId = propertyId,
+            success = true,
+            rawBytes = bytes,
+        )
+    }
+
+    override suspend fun checkCouplerFilterTable(
+        couplerAddress: IndividualAddress,
+        targetGroup: GroupAddress,
+    ): CouplerFilterTableResult {
+        ensureConnected()
+        delay(40L)
+        val dev = virtualDevices[couplerAddress]
+        val isCouplerOnline = dev?.online ?: true
+        val isKnownGa = groupValues.containsKey(targetGroup)
+        return if (!isCouplerOnline) {
+            CouplerFilterTableResult(
+                couplerAddress = couplerAddress,
+                targetGroup = targetGroup,
+                isRouted = false,
+                routingMode = "Coupler Offline",
+                explanation = "Line Coupler $couplerAddress did not answer on TP1 main line.",
+            )
+        } else if (isKnownGa) {
+            CouplerFilterTableResult(
+                couplerAddress = couplerAddress,
+                targetGroup = targetGroup,
+                isRouted = true,
+                routingMode = "Filter (Normalbetrieb)",
+                explanation = "Telegram allowed: Group address $targetGroup is explicitly configured in project and present in coupler 8 kB filter table bitmask.",
+            )
+        } else {
+            CouplerFilterTableResult(
+                couplerAddress = couplerAddress,
+                targetGroup = targetGroup,
+                isRouted = false,
+                routingMode = "Filter (Normalbetrieb)",
+                explanation = "Telegram filtered / blocked: Group address $targetGroup is unmapped in project; coupler filter table blocks inter-line transmission.",
+            )
+        }
     }
 
     override suspend fun writeProgrammingAddress(

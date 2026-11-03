@@ -921,6 +921,155 @@ private fun LineDiagnosticsContent(
                         }
                     }
 
+                    // Line Coupler Filter Table Diagnostic Card (ETS Filtertabellen-Diagnose)
+                    var filterCheckGaText by remember { mutableStateOf("1/1/1") }
+                    var showFilterCheck by remember { mutableStateOf(false) }
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.FilterAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Text(
+                                        text = "COUPLER FILTER TABLE DIAGNOSTICS",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { showFilterCheck = !showFilterCheck },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(24.dp),
+                                ) {
+                                    Text(
+                                        text = if (showFilterCheck) "Hide" else "Test Routing",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Icon(
+                                        imageVector = if (showFilterCheck) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                }
+                            }
+
+                            AnimatedVisibility(visible = showFilterCheck) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Verify whether telegrams for a Group Address are allowed across Coupler $couplerAddr or blocked by its 8 kB filter table bitmask.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        OutlinedTextField(
+                                            value = filterCheckGaText,
+                                            onValueChange = { filterCheckGaText = it.trim() },
+                                            label = { Text("Group Address (e.g. 1/1/1)", fontSize = 10.sp) },
+                                            singleLine = true,
+                                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                            modifier = Modifier.weight(1f).height(50.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                        )
+
+                                        val parsedFilterGa = GroupAddress.parseOrNull(filterCheckGaText)
+                                        Button(
+                                            onClick = {
+                                                parsedFilterGa?.let { ga ->
+                                                    controller.checkCouplerFilterTable(couplerAddr, ga)
+                                                }
+                                            },
+                                            enabled = parsedFilterGa != null && !state.isCheckingCouplerFilter,
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.height(50.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.primary,
+                                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                            ),
+                                        ) {
+                                            if (state.isCheckingCouplerFilter) {
+                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                            } else {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text("Check", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+
+                                    // Filter table result banner if available
+                                    state.couplerFilterResult?.let { result ->
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (result.isRouted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (result.isRouted) Icons.Default.CheckCircle else Icons.Default.Block,
+                                                        contentDescription = null,
+                                                        tint = if (result.isRouted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
+                                                    Text(
+                                                        text = if (result.isRouted) "TELEGRAM ALLOWED / ROUTED" else "TELEGRAM BLOCKED / FILTERED",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (result.isRouted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                                    )
+                                                }
+                                                Text(
+                                                    text = result.explanation,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontSize = 11.sp,
+                                                    color = if (result.isRouted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                                )
+                                                Text(
+                                                    text = "Coupler Mode: ${result.routingMode} • Coupler Address: ${result.couplerAddress}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontSize = 9.5.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = if (result.isRouted) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Line Audit / Scan Action Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1843,6 +1992,15 @@ private fun DeviceInfoContent(
                                 value = if (d.programmingModeActive) "ACTIVE (RED ON)" else "OFF (Normal)",
                                 highlight = d.programmingModeActive,
                             )
+                            d.macAddress?.let { mac ->
+                                PropertyRow(name = "Ethernet MAC", value = mac)
+                            }
+                            d.ipAddress?.let { ip ->
+                                PropertyRow(name = "IP Address", value = ip)
+                            }
+                            d.firmwareVersion?.let { fw ->
+                                PropertyRow(name = "Firmware Version", value = fw)
+                            }
                         }
 
                         // Notes & Diagnostics Findings
@@ -1951,6 +2109,18 @@ private fun DeviceInfoContent(
                         }
                     }
                 }
+            }
+        }
+
+        // Raw Property Inspector (PID Query) Card
+        val parsedTargetIa = IndividualAddress.parseOrNull(targetDeviceText)
+        if (parsedTargetIa != null) {
+            item {
+                RawPropertyInspectorCard(
+                    targetAddress = parsedTargetIa,
+                    state = state,
+                    controller = controller,
+                )
             }
         }
 
@@ -3589,6 +3759,214 @@ private fun DuplicateAddressScannerCard(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RawPropertyInspectorCard(
+    targetAddress: IndividualAddress,
+    state: AppUiState,
+    controller: AppController,
+) {
+    var objectIndexText by remember { mutableStateOf("0") }
+    var propertyIdText by remember { mutableStateOf("11") }
+
+    OutlinedCard(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        Icons.Default.ManageSearch,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = "OBJECT PROPERTY QUERY (PID)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                ) {
+                    Text(
+                        text = "A_PropertyValue_Read",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
+            }
+
+            Text(
+                text = "Direct interface object property interrogation for $targetAddress. Query standard KNX properties or manufacturer extensions.",
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // Quick PID selector chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                listOf(
+                    Triple("11: Serial", "0", "11"),
+                    Triple("12: Mfr", "0", "12"),
+                    Triple("54: Prog", "0", "54"),
+                    Triple("56: MAC", "0", "56"),
+                    Triple("58: IP", "0", "58"),
+                    Triple("83: FW", "0", "83"),
+                ).forEach { (label, obj, pid) ->
+                    val isSelected = objectIndexText == obj && propertyIdText == pid
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            objectIndexText = obj
+                            propertyIdText = pid
+                        },
+                        label = { Text(label, fontSize = 9.5.sp) },
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.height(26.dp),
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = objectIndexText,
+                    onValueChange = { objectIndexText = it.filter { c -> c.isDigit() } },
+                    label = { Text("Obj Idx", fontSize = 9.sp) },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    shape = RoundedCornerShape(8.dp),
+                )
+                OutlinedTextField(
+                    value = propertyIdText,
+                    onValueChange = { propertyIdText = it.filter { c -> c.isDigit() } },
+                    label = { Text("Property ID (PID)", fontSize = 9.sp) },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    modifier = Modifier.weight(1.5f).height(50.dp),
+                    shape = RoundedCornerShape(8.dp),
+                )
+
+                val objIdx = objectIndexText.toIntOrNull()
+                val propId = propertyIdText.toIntOrNull()
+                Button(
+                    onClick = {
+                        if (objIdx != null && propId != null) {
+                            controller.readRawProperty(targetAddress, objIdx, propId)
+                        }
+                    },
+                    enabled = objIdx != null && propId != null && !state.isReadingRawProperty,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(50.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
+                    ),
+                ) {
+                    if (state.isReadingRawProperty) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onSecondary, strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Query", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Result display
+            state.rawPropertyResult?.let { res ->
+                if (res.address == targetAddress) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (res.success) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = if (res.success) "READ SUCCESSFUL (PID ${res.propertyId})" else "READ FAILED",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (res.success) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                                Text(
+                                    text = "${res.rawBytes?.size ?: 0} bytes",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (res.success) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("HEX:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = res.hexValue.ifBlank { "0x00" },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                if (res.textValue.isNotBlank()) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("ASCII:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = res.textValue, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                                res.intValue?.let { iv ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("DEC:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = "$iv (0x${iv.toString(16).uppercase()})", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = res.errorMessage ?: "Device did not return property data",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
                             }
                         }
                     }

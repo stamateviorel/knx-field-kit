@@ -81,6 +81,42 @@ sealed interface BuildingTreeNode {
     ) : BuildingTreeNode
 }
 
+enum class GroupViewMode(val label: String, val icon: ImageVector) {
+    TREE("Tree View", Icons.Default.AccountTree),
+    FOLDERS("Folders", Icons.Default.FolderOpen),
+}
+
+sealed interface GroupTreeNode {
+    val id: String
+    val depth: Int
+
+    data class MainGroupNode(
+        override val id: String,
+        override val depth: Int,
+        val range: GroupRangeNode,
+        val isExpanded: Boolean,
+        val childCount: Int,
+        val totalGas: Int,
+    ) : GroupTreeNode
+
+    data class MiddleGroupNode(
+        override val id: String,
+        override val depth: Int,
+        val mainRange: GroupRangeNode,
+        val subRange: GroupRangeNode,
+        val isExpanded: Boolean,
+        val childCount: Int,
+        val totalGas: Int,
+    ) : GroupTreeNode
+
+    data class GroupLeafNode(
+        override val id: String,
+        override val depth: Int,
+        val ga: GroupAddressInfo,
+        val liveEntry: GroupValueEntry?,
+    ) : GroupTreeNode
+}
+
 @Composable
 fun MobileExplorerScreen(
     state: AppUiState,
@@ -104,6 +140,12 @@ fun MobileExplorerScreen(
     var expandedTreeIds by remember(project) {
         mutableStateOf(
             project?.locations?.firstOrNull()?.let { setOf(it.name) } ?: emptySet()
+        )
+    }
+    var groupViewMode by remember { mutableStateOf(GroupViewMode.TREE) }
+    var expandedGroupIds by remember(project) {
+        mutableStateOf(
+            project?.effectiveGroupRanges?.firstOrNull()?.let { setOf(it.id) } ?: emptySet()
         )
     }
 
@@ -814,7 +856,146 @@ fun MobileExplorerScreen(
                 val mainRange = activeMainRangeId?.let { id -> ranges.firstOrNull { it.id == id } }
                 val subRange = activeSubRangeId?.let { id -> mainRange?.children?.firstOrNull { it.id == id } }
 
-                if (subRange != null) {
+                if (groupViewMode == GroupViewMode.TREE) {
+                    val visibleGroupTreeNodes = remember(ranges, project, expandedGroupIds, state.groupLiveValues) {
+                        flattenGroupTree(ranges, project, state, expandedGroupIds)
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        item(key = "group-tree-toolbar") {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "ETS GROUP TREE (${ranges.size} Main • ${project.groupAddresses.size} GAs)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        AssistChip(
+                                            onClick = {
+                                                val all = mutableSetOf<String>()
+                                                for (mr in ranges) {
+                                                    all += mr.id
+                                                    mr.children.forEach { all += it.id }
+                                                }
+                                                expandedGroupIds = all
+                                            },
+                                            label = { Text("Expand All", fontSize = 9.5.sp) },
+                                            leadingIcon = { Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(12.dp)) },
+                                            modifier = Modifier.height(26.dp),
+                                        )
+                                        AssistChip(
+                                            onClick = { expandedGroupIds = emptySet() },
+                                            label = { Text("Collapse", fontSize = 9.5.sp) },
+                                            leadingIcon = { Icon(Icons.Default.UnfoldLess, null, modifier = Modifier.size(12.dp)) },
+                                            modifier = Modifier.height(26.dp),
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // View Mode Toggle
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    ) {
+                                        Row(modifier = Modifier.padding(2.dp)) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.primary,
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Icon(Icons.Default.AccountTree, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                                                    Text("Tree View", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                                }
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = Color.Transparent,
+                                                modifier = Modifier.clickable { groupViewMode = GroupViewMode.FOLDERS },
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text("Folders", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    FilledTonalButton(
+                                        onClick = { controller.pollAllProjectGroupAddresses() },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp),
+                                    ) {
+                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(13.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Poll All GAs", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+
+                        items(visibleGroupTreeNodes, key = { it.id }) { node ->
+                            when (node) {
+                                is GroupTreeNode.MainGroupNode -> {
+                                    GroupTreeMainItem(
+                                        node = node,
+                                        onToggle = {
+                                            expandedGroupIds = if (node.isExpanded) expandedGroupIds - node.id else expandedGroupIds + node.id
+                                        },
+                                        onPoll = {
+                                            val addrs = node.range.collectAllAddresses()
+                                            addrs.take(40).forEach { controller.readGroupAddress(it.toString()) }
+                                        },
+                                    )
+                                }
+                                is GroupTreeNode.MiddleGroupNode -> {
+                                    GroupTreeMiddleItem(
+                                        node = node,
+                                        onToggle = {
+                                            expandedGroupIds = if (node.isExpanded) expandedGroupIds - node.id else expandedGroupIds + node.id
+                                        },
+                                        onPoll = {
+                                            val addrs = node.subRange.collectAllAddresses()
+                                            addrs.forEach { controller.readGroupAddress(it.toString()) }
+                                        },
+                                    )
+                                }
+                                is GroupTreeNode.GroupLeafNode -> {
+                                    GroupTreeLeafItem(
+                                        node = node,
+                                        controller = controller,
+                                        onInspect = { onInspectGroupSheet(node.ga) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (subRange != null) {
                     // Level 3: Sub Groups (Group Addresses in Middle Group)
                     MobileBreadcrumbBar(
                         crumbs = listOf(
@@ -939,23 +1120,67 @@ fun MobileExplorerScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         item(key = "main-groups-header") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "ETS MAIN GROUPS (${ranges.size})",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                AssistChip(
-                                    onClick = { controller.pollAllProjectGroupAddresses() },
-                                    label = { Text("Poll All GAs", fontSize = 10.sp) },
-                                    leadingIcon = { Icon(Icons.Default.Sync, null, modifier = Modifier.size(13.dp)) },
-                                    modifier = Modifier.height(28.dp),
-                                )
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "ETS MAIN GROUPS (${ranges.size})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    AssistChip(
+                                        onClick = { controller.pollAllProjectGroupAddresses() },
+                                        label = { Text("Poll All GAs", fontSize = 10.sp) },
+                                        leadingIcon = { Icon(Icons.Default.Sync, null, modifier = Modifier.size(13.dp)) },
+                                        modifier = Modifier.height(28.dp),
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Start,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // View Mode Toggle
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    ) {
+                                        Row(modifier = Modifier.padding(2.dp)) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = Color.Transparent,
+                                                modifier = Modifier.clickable { groupViewMode = GroupViewMode.TREE },
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Icon(Icons.Default.AccountTree, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text("Tree View", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.primary,
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                                                    Text("Folders", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -3636,13 +3861,415 @@ private fun MobileRoomCockpitCard(
                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
                                         modifier = Modifier.height(24.dp),
                                     ) {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(11.dp))
+                                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(11.dp))
                                         Spacer(Modifier.width(2.dp))
                                         Text("Read", fontSize = 9.sp)
                                     }
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun flattenGroupTree(
+    ranges: List<GroupRangeNode>,
+    project: KnxProject,
+    state: AppUiState,
+    expandedIds: Set<String>,
+): List<GroupTreeNode> {
+    val result = mutableListOf<GroupTreeNode>()
+
+    for (mainRange in ranges) {
+        val isExpanded = mainRange.id in expandedIds
+        val allAddrs = mainRange.collectAllAddresses()
+        result += GroupTreeNode.MainGroupNode(
+            id = mainRange.id,
+            depth = 0,
+            range = mainRange,
+            isExpanded = isExpanded,
+            childCount = mainRange.children.size,
+            totalGas = allAddrs.size,
+        )
+
+        if (isExpanded) {
+            for (subRange in mainRange.children) {
+                val isSubExpanded = subRange.id in expandedIds
+                val subAddrs = subRange.collectAllAddresses()
+                result += GroupTreeNode.MiddleGroupNode(
+                    id = subRange.id,
+                    depth = 1,
+                    mainRange = mainRange,
+                    subRange = subRange,
+                    isExpanded = isSubExpanded,
+                    childCount = subAddrs.size,
+                    totalGas = subAddrs.size,
+                )
+
+                if (isSubExpanded) {
+                    val gas = subAddrs.mapNotNull { project.findGroupAddress(it) }
+                    for (ga in gas) {
+                        result += GroupTreeNode.GroupLeafNode(
+                            id = "${subRange.id}/${ga.address.raw}",
+                            depth = 2,
+                            ga = ga,
+                            liveEntry = state.groupLiveValues[ga.address],
+                        )
+                    }
+                }
+            }
+            for (addr in mainRange.directAddresses) {
+                val ga = project.findGroupAddress(addr)
+                if (ga != null) {
+                    result += GroupTreeNode.GroupLeafNode(
+                        id = "${mainRange.id}/${ga.address.raw}",
+                        depth = 1,
+                        ga = ga,
+                        liveEntry = state.groupLiveValues[ga.address],
+                    )
+                }
+            }
+        }
+    }
+
+    return result
+}
+
+@Composable
+private fun GroupTreeMainItem(
+    node: GroupTreeNode.MainGroupNode,
+    onToggle: () -> Unit,
+    onPoll: () -> Unit,
+) {
+    OutlinedCard(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = if (node.isExpanded) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                        Text(
+                            text = node.range.prefixLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                        )
+                    }
+                    Text(
+                        text = node.range.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = "${node.childCount} middle groups • ${node.totalGas} GAs",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilledTonalButton(
+                    onClick = onPoll,
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.height(26.dp),
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Poll", fontSize = 10.sp)
+                }
+
+                IconButton(onClick = onToggle, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        imageVector = if (node.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupTreeMiddleItem(
+    node: GroupTreeNode.MiddleGroupNode,
+    onToggle: () -> Unit,
+    onPoll: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "├── ",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        OutlinedCard(
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.outlinedCardColors(
+                containerColor = if (node.isExpanded) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            modifier = Modifier.weight(1f).clickable(onClick = onToggle),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(3.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                        ) {
+                            Text(
+                                text = node.subRange.prefixLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                            )
+                        }
+                        Text(
+                            text = node.subRange.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = "${node.totalGas} group addresses",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FilledTonalButton(
+                        onClick = onPoll,
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("Poll", fontSize = 9.5.sp)
+                    }
+
+                    IconButton(onClick = onToggle, modifier = Modifier.size(26.dp)) {
+                        Icon(
+                            imageVector = if (node.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupTreeLeafItem(
+    node: GroupTreeNode.GroupLeafNode,
+    controller: AppController,
+    onInspect: () -> Unit,
+) {
+    val ga = node.ga
+    val gaText = ga.address.toString()
+    val isSwitch = DptCodec.resolveMainDpt(ga.dpt) == MainDpt.DPT_1_BOOL ||
+        ga.name.contains("Schalten", ignoreCase = true) ||
+        ga.name.contains("Switch", ignoreCase = true)
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 28.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "│   └── ",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        OutlinedCard(
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.outlinedCardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.weight(1f).clickable(onClick = onInspect),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Text(
+                                text = gaText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        }
+
+                        ga.dpt?.let { dpt ->
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                            ) {
+                                Text(
+                                    text = dpt,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = ga.name.ifBlank { "Group Address" },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    // Live Value Badge
+                    val liveVal = node.liveEntry?.valueText
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (liveVal != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Text(
+                            text = liveVal ?: "—",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            color = if (liveVal != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+
+                // Inline Test Controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isSwitch) {
+                        FilledTonalButton(
+                            onClick = { controller.writeGroupSwitch(gaText, false) },
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                            modifier = Modifier.height(22.dp),
+                        ) {
+                            Text("OFF", fontSize = 9.sp)
+                        }
+                        Spacer(Modifier.width(3.dp))
+                        Button(
+                            onClick = { controller.writeGroupSwitch(gaText, true) },
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                            modifier = Modifier.height(22.dp),
+                        ) {
+                            Text("ON", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.width(3.dp))
+                    OutlinedButton(
+                        onClick = { controller.readGroupAddress(gaText) },
+                        shape = RoundedCornerShape(5.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(22.dp),
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(10.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("Read", fontSize = 9.sp)
                     }
                 }
             }

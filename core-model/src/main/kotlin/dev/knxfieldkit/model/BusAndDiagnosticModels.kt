@@ -167,9 +167,39 @@ data class DeviceDiagnosticDetails(
     val serialNumberHex: String? = null,
     val manufacturerId: Int? = null,
     val programmingModeActive: Boolean = false,
+    val macAddress: String? = null,
+    val ipAddress: String? = null,
+    val firmwareVersion: String? = null,
     val loadState: String? = null,
     val runState: String? = null,
     val notes: List<String> = emptyList()
+)
+
+data class RawPropertyReadResult(
+    val address: IndividualAddress,
+    val objectIndex: Int,
+    val propertyId: Int,
+    val success: Boolean,
+    val rawBytes: ByteArray? = null,
+    val errorMessage: String? = null,
+) {
+    val hexValue: String get() = rawBytes?.let { HexBytes.toHex(it) } ?: ""
+    val textValue: String get() = rawBytes?.let {
+        String(it, Charsets.ISO_8859_1).filter { c -> c.isLetterOrDigit() || c == '.' || c == '-' || c == '_' || c == ' ' }
+    } ?: ""
+    val intValue: Long? get() = rawBytes?.let {
+        var res = 0L
+        for (b in it) res = (res shl 8) or (b.toLong() and 0xFF)
+        res
+    }
+}
+
+data class CouplerFilterTableResult(
+    val couplerAddress: IndividualAddress,
+    val targetGroup: GroupAddress,
+    val isRouted: Boolean,
+    val routingMode: String,
+    val explanation: String,
 )
 
 enum class DuplicateIssueType(val label: String) {

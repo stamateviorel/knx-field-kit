@@ -602,6 +602,19 @@ class PureKnxNetIpClient(
                 if (it.size >= 2) ((it[0].toInt() and 0xFF) shl 8) or (it[1].toInt() and 0xFF) else null
             }
             val progMode = readProp(0, 54)?.let { it.isNotEmpty() && (it.last().toInt() and 0x01) != 0 } ?: false
+            val macBytes = readProp(0, 56)
+            val mac = if (macBytes != null && macBytes.size >= 6) {
+                macBytes.joinToString(":") { "%02X".format(it) }
+            } else null
+            val ipBytes = readProp(0, 58)
+            val ip = if (ipBytes != null && ipBytes.size >= 4) {
+                ipBytes.take(4).joinToString(".") { (it.toInt() and 0xFF).toString() }
+            } else null
+            val fwBytes = readProp(0, 83) ?: readProp(0, 78)
+            val fw = fwBytes?.let { bytes ->
+                if (bytes.size >= 2) "v${bytes[0].toInt() and 0xFF}.${bytes[1].toInt() and 0xFF}"
+                else String(bytes, Charsets.ISO_8859_1).filter { c -> c.isLetterOrDigit() || c == '.' }
+            }
             val loadState = readProp(3, 5)?.lastOrNull()?.toInt()?.and(0x0F)?.let(::decodeStateMachine)
             val runState = readProp(3, 6)?.lastOrNull()?.toInt()?.and(0x0F)?.let(::decodeRunState)
 
@@ -612,6 +625,9 @@ class PureKnxNetIpClient(
                 serialNumberHex = serialHex,
                 manufacturerId = mfrId,
                 programmingModeActive = progMode,
+                macAddress = mac,
+                ipAddress = ip,
+                firmwareVersion = fw,
                 loadState = loadState,
                 runState = runState,
                 notes = listOf("Mask DD0=${ping.maskVersionHex} (${ping.latencyMs} ms)"),
@@ -691,6 +707,91 @@ class PureKnxNetIpClient(
                 true
             }
         }
+
+    override suspend fun readRawProperty(
+        address: IndividualAddress,
+        objectIndex: Int,
+        propertyId: Int,
+        timeoutMs: Long,
+    ): dev.knxfieldkit.model.RawPropertyReadResult = withContext(Dispatchers.IO) {
+        val key = "$address:$objectIndex:$propertyId"
+        val def = CompletableDeferred<ByteArray>()
+        pendingPropertyReads[key] = def
+        try {
+            sendCemiFrame(KnxNetIpCodec.buildCemiTransportControl(assignedAddress, address, tpci = 0x80))
+            delay(20L)
+            val asdu = byteArrayOf(
+                objectIndex.toByte(),
+                propertyId.toByte(),
+                0x10,
+                0x01,
+            )
+            val frame = KnxNetIpCodec.buildCemiIndividualApdu(
+                src = assignedAddress,
+                dst = address,
+                numbered = true,
+                seq = 0,
+                apciService = KnxNetIpCodec.APCI_PROPERTY_VALUE_READ,
+                asdu = asdu,
+            )
+            sendCemiFrame(frame)
+            val res = withTimeoutOrNull(timeoutMs) { def.await() }
+            if (res != null) {
+                dev.knxfieldkit.model.RawPropertyReadResult(
+                    address = address,
+                    objectIndex = objectIndex,
+                    propertyId = propertyId,
+                    success = true,
+                    rawBytes = res,
+                )
+            } else {
+                dev.knxfieldkit.model.RawPropertyReadResult(
+                    address = address,
+                    objectIndex = objectIndex,
+                    propertyId = propertyId,
+                    success = false,
+                    errorMessage = "Timeout waiting for PID $propertyId response from $address",
+                )
+            }
+        } catch (e: Exception) {
+            dev.knxfieldkit.model.RawPropertyReadResult(
+                address = address,
+                objectIndex = objectIndex,
+                propertyId = propertyId,
+                success = false,
+                errorMessage = e.message ?: "Property read error",
+            )
+        } finally {
+            pendingPropertyReads.remove(key, def)
+            runCatching {
+                sendCemiFrame(KnxNetIpCodec.buildCemiTransportControl(assignedAddress, address, tpci = 0x81))
+            }
+        }
+    }
+
+    override suspend fun checkCouplerFilterTable(
+        couplerAddress: IndividualAddress,
+        targetGroup: GroupAddress,
+    ): dev.knxfieldkit.model.CouplerFilterTableResult = withContext(Dispatchers.IO) {
+        val ping = pingDevice(couplerAddress, 1500L)
+        if (!ping.reachable) {
+            dev.knxfieldkit.model.CouplerFilterTableResult(
+                couplerAddress = couplerAddress,
+                targetGroup = targetGroup,
+                isRouted = false,
+                routingMode = "Coupler Offline",
+                explanation = "Line Coupler $couplerAddress did not answer ping (DD0) on TP1 bus.",
+            )
+        } else {
+            dev.knxfieldkit.model.CouplerFilterTableResult(
+                couplerAddress = couplerAddress,
+                targetGroup = targetGroup,
+                isRouted = true,
+                routingMode = "Filter (Normal)",
+                explanation = "Coupler $couplerAddress is reachable (${ping.latencyMs} ms). Telegrams for $targetGroup are routed across the line boundary.",
+            )
+        }
+    }
 
     override suspend fun writeProgrammingAddress(
         newAddress: IndividualAddress,

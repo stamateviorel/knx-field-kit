@@ -158,6 +158,10 @@ data class AppUiState(
     val locatingDeviceAddress: IndividualAddress? = null,
     val duplicateScanReport: DuplicateScanReport? = null,
     val isScanningDuplicates: Boolean = false,
+    val rawPropertyResult: dev.knxfieldkit.model.RawPropertyReadResult? = null,
+    val isReadingRawProperty: Boolean = false,
+    val couplerFilterResult: dev.knxfieldkit.model.CouplerFilterTableResult? = null,
+    val isCheckingCouplerFilter: Boolean = false,
     val statusMessage: String = "Ready — Open a .knxproj / .knxkeys file to begin or connect to KNXnet/IP",
 )
 
@@ -1162,6 +1166,66 @@ class AppController(
                     it.copy(
                         isScanningDuplicates = false,
                         statusMessage = "Duplicate check failed: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    fun readRawProperty(address: IndividualAddress, objectIndex: Int, propertyId: Int) {
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isReadingRawProperty = true,
+                    rawPropertyResult = null,
+                    statusMessage = "Reading Object $objectIndex PID $propertyId from $address...",
+                )
+            }
+            try {
+                val res = activeClient.readRawProperty(address, objectIndex, propertyId)
+                _uiState.update {
+                    it.copy(
+                        isReadingRawProperty = false,
+                        rawPropertyResult = res,
+                        statusMessage = if (res.success) "Read PID $propertyId: ${res.hexValue}" else "Failed to read PID $propertyId: ${res.errorMessage}",
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isReadingRawProperty = false,
+                        rawPropertyResult = dev.knxfieldkit.model.RawPropertyReadResult(address, objectIndex, propertyId, false, errorMessage = e.message),
+                        statusMessage = "Error reading PID $propertyId: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    fun checkCouplerFilterTable(couplerAddress: IndividualAddress, targetGroup: GroupAddress) {
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isCheckingCouplerFilter = true,
+                    couplerFilterResult = null,
+                    statusMessage = "Diagnosing filter table on coupler $couplerAddress for $targetGroup...",
+                )
+            }
+            try {
+                val res = activeClient.checkCouplerFilterTable(couplerAddress, targetGroup)
+                _uiState.update {
+                    it.copy(
+                        isCheckingCouplerFilter = false,
+                        couplerFilterResult = res,
+                        statusMessage = "Filter diagnosis: ${if (res.isRouted) "ALLOWED" else "FILTERED"} for $targetGroup",
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isCheckingCouplerFilter = false,
+                        couplerFilterResult = dev.knxfieldkit.model.CouplerFilterTableResult(couplerAddress, targetGroup, false, "Error", e.message ?: "Diagnostic failed"),
+                        statusMessage = "Filter diagnosis error: ${e.message}",
                     )
                 }
             }

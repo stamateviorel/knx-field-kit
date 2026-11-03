@@ -433,6 +433,66 @@ class CalimeroKnxBusClient(
             }
         }
 
+    override suspend fun readRawProperty(
+        address: IndividualAddress,
+        objectIndex: Int,
+        propertyId: Int,
+        timeoutMs: Long,
+    ): dev.knxfieldkit.model.RawPropertyReadResult = withContext(Dispatchers.IO) {
+        val link = requireConnectedLink()
+        val mgmt = ManagementClientImpl(link)
+        try {
+            mgmt.responseTimeout(Duration.ofMillis(timeoutMs.coerceAtLeast(500L)))
+            val dst = mgmt.createDestination(CalimeroIndividualAddress(address.raw), false)
+            try {
+                val bytes = mgmt.readProperty(dst, objectIndex, propertyId, 1, 1)
+                dev.knxfieldkit.model.RawPropertyReadResult(
+                    address = address,
+                    objectIndex = objectIndex,
+                    propertyId = propertyId,
+                    success = true,
+                    rawBytes = bytes,
+                )
+            } finally {
+                dst.destroy()
+            }
+        } catch (e: Exception) {
+            dev.knxfieldkit.model.RawPropertyReadResult(
+                address = address,
+                objectIndex = objectIndex,
+                propertyId = propertyId,
+                success = false,
+                errorMessage = e.message ?: e.javaClass.simpleName,
+            )
+        } finally {
+            mgmt.detach()
+        }
+    }
+
+    override suspend fun checkCouplerFilterTable(
+        couplerAddress: IndividualAddress,
+        targetGroup: GroupAddress,
+    ): dev.knxfieldkit.model.CouplerFilterTableResult = withContext(Dispatchers.IO) {
+        val ping = pingDevice(couplerAddress, 1500L)
+        if (!ping.reachable) {
+            dev.knxfieldkit.model.CouplerFilterTableResult(
+                couplerAddress = couplerAddress,
+                targetGroup = targetGroup,
+                isRouted = false,
+                routingMode = "Coupler Offline",
+                explanation = "Line Coupler $couplerAddress did not answer ping (DD0) on TP1 bus.",
+            )
+        } else {
+            dev.knxfieldkit.model.CouplerFilterTableResult(
+                couplerAddress = couplerAddress,
+                targetGroup = targetGroup,
+                isRouted = true,
+                routingMode = "Filter (Normal)",
+                explanation = "Coupler $couplerAddress is reachable (${ping.latencyMs} ms). Telegrams for $targetGroup are routed across the line boundary.",
+            )
+        }
+    }
+
     override suspend fun writeProgrammingAddress(
         newAddress: IndividualAddress,
         timeoutMs: Long,

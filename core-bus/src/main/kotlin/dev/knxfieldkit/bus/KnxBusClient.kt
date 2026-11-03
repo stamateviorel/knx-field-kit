@@ -48,6 +48,18 @@ interface KnxBusClient : AutoCloseable {
 
     suspend fun locateDevice(address: IndividualAddress, flashCount: Int = 4): Boolean
 
+    suspend fun readRawProperty(
+        address: IndividualAddress,
+        objectIndex: Int,
+        propertyId: Int,
+        timeoutMs: Long = 2_000L,
+    ): dev.knxfieldkit.model.RawPropertyReadResult
+
+    suspend fun checkCouplerFilterTable(
+        couplerAddress: IndividualAddress,
+        targetGroup: GroupAddress,
+    ): dev.knxfieldkit.model.CouplerFilterTableResult
+
     suspend fun writeProgrammingAddress(newAddress: IndividualAddress, timeoutMs: Long = 3_000L): IndividualAddressWriteResult
 
     /**

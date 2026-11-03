@@ -2,6 +2,7 @@ package dev.knxfieldkit.mobile
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,7 +21,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +61,12 @@ fun MobileMonitorScreen(
     val q = state.monitorSearchQuery.trim().lowercase()
     var apciFilter by remember { mutableStateOf("ALL") } // "ALL", "WRITE", "READ", "RESP"
     var showTopTalkers by remember { mutableStateOf(false) }
+    var trafficHistory by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)) }
+
+    LaunchedEffect(health.telegramsPerSecond) {
+        val current = health.telegramsPerSecond.toFloat()
+        trafficHistory = (trafficHistory + current).takeLast(40)
+    }
 
     var quickTestGaText by remember(state.selectedGroupAddressInput) {
         mutableStateOf(state.selectedGroupAddressInput.ifBlank { "1/1/1" })
@@ -214,6 +225,17 @@ fun MobileMonitorScreen(
                         else -> MaterialTheme.colorScheme.primary
                     },
                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                )
+
+                // Real-Time Bus Load Waveform Canvas Sparkline
+                BusLoadWaveformChart(
+                    history = trafficHistory,
+                    isStorm = isStorm,
+                    isElevated = isElevated,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .padding(vertical = 2.dp),
                 )
 
                 // Expandable Top Talkers Tray
@@ -1145,6 +1167,130 @@ private fun MobileSenderSectionCard(
                 }
             }
             content()
+        }
+    }
+}
+
+@Composable
+private fun BusLoadWaveformChart(
+    history: List<Float>,
+    isStorm: Boolean,
+    isElevated: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val accentColor = when {
+        isStorm -> MaterialTheme.colorScheme.error
+        isElevated -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+
+    Column(modifier = modifier) {
+        Canvas(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            val width = size.width
+            val height = size.height
+            if (width <= 0 || height <= 0 || history.size < 2) return@Canvas
+
+            val maxVal = maxOf(40f, (history.maxOrNull() ?: 10f) * 1.2f)
+
+            // Draw horizontal reference lines (e.g. 10 msg/s, 25 msg/s)
+            val y25 = height - (25f / maxVal) * height
+            val y10 = height - (10f / maxVal) * height
+            drawLine(
+                color = gridColor,
+                start = androidx.compose.ui.geometry.Offset(0f, y25),
+                end = androidx.compose.ui.geometry.Offset(width, y25),
+                strokeWidth = 1f,
+            )
+            drawLine(
+                color = gridColor,
+                start = androidx.compose.ui.geometry.Offset(0f, y10),
+                end = androidx.compose.ui.geometry.Offset(width, y10),
+                strokeWidth = 1f,
+            )
+
+            val stepX = width / (history.size - 1)
+            val strokePath = Path()
+            val fillPath = Path()
+
+            val points = history.mapIndexed { idx, v ->
+                val x = idx * stepX
+                val y = height - (v.coerceIn(0f, maxVal) / maxVal) * (height - 4f) - 2f
+                androidx.compose.ui.geometry.Offset(x, y)
+            }
+
+            strokePath.moveTo(points.first().x, points.first().y)
+            fillPath.moveTo(points.first().x, height)
+            fillPath.lineTo(points.first().x, points.first().y)
+
+            for (i in 0 until points.size - 1) {
+                val p0 = points[i]
+                val p1 = points[i + 1]
+                val cx = (p0.x + p1.x) / 2f
+                strokePath.cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+                fillPath.cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+            }
+
+            fillPath.lineTo(points.last().x, height)
+            fillPath.close()
+
+            // Draw gradient fill
+            drawPath(
+                path = fillPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(accentColor.copy(alpha = 0.35f), accentColor.copy(alpha = 0.02f)),
+                    startY = 0f,
+                    endY = height,
+                ),
+            )
+
+            // Draw smooth curve stroke
+            drawPath(
+                path = strokePath,
+                color = accentColor,
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                ),
+            )
+
+            // Draw pulsating dot on current reading
+            val latest = points.last()
+            drawCircle(
+                color = accentColor,
+                radius = 3.5.dp.toPx(),
+                center = latest,
+            )
+            drawCircle(
+                color = accentColor.copy(alpha = 0.3f),
+                radius = 6.dp.toPx(),
+                center = latest,
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "-40s",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            )
+            Text(
+                text = "TP1 Bus Load Waveform (Real-time)",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+            Text(
+                text = "Live",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                color = accentColor,
+            )
         }
     }
 }
