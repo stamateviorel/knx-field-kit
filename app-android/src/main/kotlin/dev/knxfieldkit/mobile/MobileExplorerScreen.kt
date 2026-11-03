@@ -37,9 +37,9 @@ import dev.knxfieldkit.app.GroupValueEntry
 import dev.knxfieldkit.model.*
 
 enum class MobileExplorerPane(val label: String, val icon: ImageVector) {
+    ROOMS("Buildings", Icons.Default.Apartment),
     TOPOLOGY("Topology", Icons.Default.AccountTree),
     GROUPS("Group Addresses", Icons.Default.Folder),
-    ROOMS("Buildings", Icons.Default.Apartment),
 }
 
 enum class BuildingViewMode(val label: String, val icon: ImageVector) {
@@ -190,7 +190,7 @@ fun MobileExplorerScreen(
     onOpenProjectFile: () -> Unit = {},
 ) {
     val project = state.project
-    var pane by remember { mutableStateOf(MobileExplorerPane.TOPOLOGY) }
+    var pane by remember { mutableStateOf(MobileExplorerPane.ROOMS) }
     var searchQuery by remember { mutableStateOf("") }
 
     // ETS Hierarchical Drill-Down State
@@ -2530,73 +2530,14 @@ private fun MobileDeviceObjectsDetail(
 
                         // In-line Testing Action Controls
                         if (primaryGa != null) {
-                            val gaText = primaryGa.toString()
-                            val mainDpt = DptCodec.resolveMainDpt(obj.dpt)
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                when (mainDpt) {
-                                    MainDpt.DPT_1_BOOL -> {
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupSwitch(gaText, false) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp),
-                                        ) {
-                                            Text("OFF", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                        }
-                                        Button(
-                                            onClick = { controller.writeGroupSwitch(gaText, true) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp),
-                                        ) {
-                                            Text("ON", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                    MainDpt.DPT_5_PERCENT, MainDpt.DPT_5_UNSIGNED -> {
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupPercent(gaText, 0.0) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp),
-                                        ) {
-                                            Text("0%", style = MaterialTheme.typography.labelSmall)
-                                        }
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupPercent(gaText, 50.0) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp),
-                                        ) {
-                                            Text("50%", style = MaterialTheme.typography.labelSmall)
-                                        }
-                                        Button(
-                                            onClick = { controller.writeGroupPercent(gaText, 100.0) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp),
-                                        ) {
-                                            Text("100%", style = MaterialTheme.typography.labelSmall)
-                                        }
-                                    }
-                                    else -> Unit
-                                }
-
-                                OutlinedButton(
-                                    onClick = { controller.readGroupAddress(gaText) },
-                                    shape = RoundedCornerShape(6.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                    modifier = Modifier.height(28.dp),
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(12.dp))
-                                    Spacer(Modifier.width(3.dp))
-                                    Text("Read?", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                }
+                            val gaInfo = remember(primaryGa, obj, project) {
+                                project.findGroupAddress(primaryGa) ?: GroupAddressInfo(primaryGa, obj.name, dpt = obj.dpt)
                             }
+                            EtsGaInlineControlBar(
+                                ga = gaInfo,
+                                liveValue = state.groupLiveValues[primaryGa]?.valueText,
+                                controller = controller,
+                            )
                         }
                     }
                 }
@@ -2818,174 +2759,12 @@ private fun MobileGroupAddressCard(
                 }
             }
 
-            // In-line Testing Controls Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                when (mainDpt) {
-                    MainDpt.DPT_1_BOOL -> {
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupSwitch(gaText, false) },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                            modifier = Modifier.height(30.dp),
-                        ) {
-                            Text("OFF", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        }
-                        Button(
-                            onClick = { controller.writeGroupSwitch(gaText, true) },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                            modifier = Modifier.height(30.dp),
-                        ) {
-                            Text("ON", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        }
-                        OutlinedButton(
-                            onClick = { controller.readGroupAddress(gaText) },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(30.dp),
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(Modifier.width(3.dp))
-                            Text("Read?", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        }
-                        FilledTonalButton(
-                            onClick = { controller.startWalkTestBlink(gaText, intervalMs = 1200L) },
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(30.dp),
-                        ) {
-                            Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(Modifier.width(2.dp))
-                            Text("Blink", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    MainDpt.DPT_5_PERCENT, MainDpt.DPT_5_UNSIGNED -> {
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupPercent(gaText, 0.0) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("0%", style = MaterialTheme.typography.labelSmall)
-                        }
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupPercent(gaText, 50.0) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("50%", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Button(
-                            onClick = { controller.writeGroupPercent(gaText, 100.0) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("100%", style = MaterialTheme.typography.labelSmall)
-                        }
-                        OutlinedButton(
-                            onClick = { controller.readGroupAddress(gaText) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("Read?", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    MainDpt.DPT_3_DIM_STEP -> {
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupDimStep(gaText, increase = false) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("−", style = MaterialTheme.typography.labelSmall)
-                        }
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupDimStep(gaText, increase = false, stepCode = 0) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("Stop", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Button(
-                            onClick = { controller.writeGroupDimStep(gaText, increase = true) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("+", style = MaterialTheme.typography.labelSmall)
-                        }
-                        OutlinedButton(
-                            onClick = { controller.readGroupAddress(gaText) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("Read?", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    MainDpt.DPT_17_SCENE -> {
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupScene(gaText, 1) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("S1", style = MaterialTheme.typography.labelSmall)
-                        }
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupScene(gaText, 2) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("S2", style = MaterialTheme.typography.labelSmall)
-                        }
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupScene(gaText, 3) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("S3", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    else -> {
-                        OutlinedButton(
-                            onClick = { controller.readGroupAddress(gaText) },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(12.dp))
-                            Spacer(Modifier.width(3.dp))
-                            Text("Read?", style = MaterialTheme.typography.labelSmall)
-                        }
-                        FilledTonalButton(
-                            onClick = {
-                                controller.selectGroupAddressForSender(gaText)
-                                controller.selectTab(AppTab.SENDER)
-                            },
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Text("Send…", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
+            // ETS Standard Inline KNX Control Bar (Switches, Absolute Dimmers, Blinds, HVAC, Read)
+            EtsGaInlineControlBar(
+                ga = ga,
+                liveValue = liveEntry?.valueText,
+                controller = controller,
+            )
 
             // Expandable Connected Communication Objects (Linked Physical Devices)
             if (showLinks && ga.linkedObjects.isNotEmpty()) {
@@ -3677,6 +3456,267 @@ private fun BuildingTreeFunctionItem(
     }
 }
 
+// ---------------------------------------------------------------------------
+// ETS Standard Inline KNX Control Bar (Switches, Absolute Dimmers, Blinds, HVAC, Read)
+// ---------------------------------------------------------------------------
+@Composable
+fun EtsGaInlineControlBar(
+    ga: GroupAddressInfo,
+    liveValue: String?,
+    controller: AppController,
+    modifier: Modifier = Modifier,
+) {
+    val gaText = ga.address.toString()
+    val mainDpt = DptCodec.resolveMainDpt(ga.dpt)
+    val nameLower = ga.name.lowercase()
+
+    val isSwitch = (mainDpt == MainDpt.DPT_1_BOOL || nameLower.contains("schalt") || nameLower.contains("switch")) &&
+        !nameLower.contains("blind") && !nameLower.contains("jalousie") && !nameLower.contains("rollladen") &&
+        !nameLower.contains("shutter") && !nameLower.contains("auf/ab") && !nameLower.contains("up/down") &&
+        !nameLower.contains("stop") && !nameLower.contains("lamelle") && !nameLower.contains("step")
+
+    val isAbsoluteDimmer = mainDpt == MainDpt.DPT_5_PERCENT ||
+        mainDpt == MainDpt.DPT_5_UNSIGNED ||
+        ga.dpt?.contains("5.001") == true ||
+        ga.dpt?.contains("5.004") == true ||
+        nameLower.contains("dimmwert") || nameLower.contains("dimming value") ||
+        nameLower.contains("helligkeit") || nameLower.contains("brightness") ||
+        nameLower.contains("prozent") || nameLower.contains("percent") ||
+        nameLower.contains("position") ||
+        (nameLower.contains("dimm") && (nameLower.contains("wert") || nameLower.contains("value") || nameLower.contains("%")))
+
+    val isRelativeDimmer = !isAbsoluteDimmer && (mainDpt == MainDpt.DPT_3_DIM_STEP ||
+        (nameLower.contains("dimm") && (nameLower.contains("relativ") || nameLower.contains("schritt") || nameLower.contains("step"))))
+
+    val isShutterMove = ga.dpt?.contains("1.008") == true ||
+        nameLower.contains("auf/ab") || nameLower.contains("up/down") || nameLower.contains("fahren") ||
+        ((nameLower.contains("blind") || nameLower.contains("jalousie") || nameLower.contains("rollladen") || nameLower.contains("shutter")) &&
+            (nameLower.contains("move") || nameLower.contains("auf") || nameLower.contains("ab") || nameLower.contains("up") || nameLower.contains("down") || mainDpt == MainDpt.DPT_1_BOOL))
+
+    val isShutterStep = ga.dpt?.contains("1.007") == true ||
+        nameLower.contains("stop") || nameLower.contains("lamelle") || nameLower.contains("schritt")
+
+    val isTemperature = mainDpt == MainDpt.DPT_9_FLOAT ||
+        nameLower.contains("temp") || nameLower.contains("sollwert") || nameLower.contains("thermostat") || nameLower.contains("istwert")
+
+    val isScene = mainDpt == MainDpt.DPT_17_SCENE ||
+        nameLower.contains("szene") || nameLower.contains("scene")
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // Main Action & Preset Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when {
+                isSwitch -> {
+                    val isLiveOn = liveValue?.equals("ON", ignoreCase = true) == true || liveValue?.contains("1") == true
+                    val isLiveOff = liveValue?.equals("OFF", ignoreCase = true) == true || liveValue?.contains("0") == true
+
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupSwitch(gaText, false) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                        colors = if (isLiveOff) {
+                            ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        } else ButtonDefaults.filledTonalButtonColors(),
+                    ) {
+                        Text("0 OFF", fontSize = 9.sp, fontWeight = if (isLiveOff) FontWeight.Bold else FontWeight.Normal)
+                    }
+
+                    Spacer(Modifier.width(4.dp))
+
+                    Button(
+                        onClick = { controller.writeGroupSwitch(gaText, true) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                        colors = if (isLiveOn) {
+                            ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF16A34A),
+                                contentColor = Color.White,
+                            )
+                        } else ButtonDefaults.buttonColors(),
+                    ) {
+                        Text("1 ON", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                isAbsoluteDimmer -> {
+                    listOf(0, 25, 50, 75, 100).forEach { pct ->
+                        FilledTonalButton(
+                            onClick = { controller.writeGroupPercent(gaText, pct.toDouble()) },
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 1.dp),
+                            modifier = Modifier.height(24.dp).padding(horizontal = 1.5.dp),
+                        ) {
+                            Text("$pct%", fontSize = 8.5.sp, fontWeight = if (pct == 0 || pct == 100) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
+
+                isShutterMove -> {
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupSwitch(gaText, false) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("UP", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupSwitch(gaText, true) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("DOWN", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                isShutterStep -> {
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupSwitch(gaText, false) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("STOP", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                isRelativeDimmer -> {
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupDimStep(gaText, increase = false, stepCode = 2) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("DIM -", fontSize = 9.sp)
+                    }
+                    Spacer(Modifier.width(3.dp))
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupDimStep(gaText, increase = false, stepCode = 0) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("STOP", fontSize = 8.5.sp)
+                    }
+                    Spacer(Modifier.width(3.dp))
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupDimStep(gaText, increase = true, stepCode = 2) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("DIM +", fontSize = 9.sp)
+                    }
+                }
+
+                isTemperature -> {
+                    val parsedVal = liveValue?.replace("°C", "")?.replace("°", "")?.trim()?.toDoubleOrNull() ?: 21.0
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupFloat16(gaText, parsedVal - 0.5) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("-0.5°", fontSize = 9.sp)
+                    }
+                    Spacer(Modifier.width(3.dp))
+                    FilledTonalButton(
+                        onClick = { controller.writeGroupFloat16(gaText, parsedVal + 0.5) },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("+0.5°", fontSize = 9.sp)
+                    }
+                }
+
+                isScene -> {
+                    listOf(1, 2, 3, 4).forEach { sNum ->
+                        FilledTonalButton(
+                            onClick = { controller.writeGroupScene(gaText, sNum) },
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                            modifier = Modifier.height(24.dp).padding(horizontal = 1.5.dp),
+                        ) {
+                            Text("S$sNum", fontSize = 8.5.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(4.dp))
+
+            // ETS Read Button
+            OutlinedButton(
+                onClick = { controller.readGroupAddress(gaText) },
+                shape = RoundedCornerShape(4.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                modifier = Modifier.height(24.dp),
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(10.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("Read", fontSize = 9.sp)
+            }
+        }
+
+        // Secondary continuous slider row for Absolute Dimmer / Position
+        if (isAbsoluteDimmer) {
+            val livePct = remember(liveValue) {
+                liveValue?.replace("%", "")?.trim()?.toDoubleOrNull()?.toFloat() ?: 0f
+            }
+            var sliderVal by remember(livePct) { mutableFloatStateOf(livePct.coerceIn(0f, 100f)) }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    Icons.Default.Tune,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(13.dp),
+                )
+                Slider(
+                    value = sliderVal,
+                    onValueChange = { sliderVal = it },
+                    onValueChangeFinished = { controller.writeGroupPercent(gaText, sliderVal.toDouble()) },
+                    valueRange = 0f..100f,
+                    modifier = Modifier.weight(1f).height(24.dp),
+                )
+                Text(
+                    text = "${sliderVal.toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.width(36.dp),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun BuildingTreeGaLeafItem(
     node: BuildingTreeNode.FunctionGaLeafNode,
@@ -3685,7 +3725,6 @@ private fun BuildingTreeGaLeafItem(
 ) {
     val ga = node.ga
     val gaText = ga.address.toString()
-    val isSwitch = ga.dpt?.startsWith("1.") == true || ga.name.contains("Schalten", ignoreCase = true) || ga.name.contains("Switch", ignoreCase = true)
     val indent = (node.depth * 14).dp
 
     Row(
@@ -3702,9 +3741,9 @@ private fun BuildingTreeGaLeafItem(
         )
 
         OutlinedCard(
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(6.dp),
             colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.weight(1f).clickable(onClick = onInspect),
         ) {
             Column(
@@ -3770,49 +3809,19 @@ private fun BuildingTreeGaLeafItem(
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
                             color = if (liveVal != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                         )
                     }
                 }
 
-                // Inline Test Controls
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (isSwitch) {
-                        FilledTonalButton(
-                            onClick = { controller.writeGroupSwitch(gaText, false) },
-                            shape = RoundedCornerShape(5.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                            modifier = Modifier.height(22.dp),
-                        ) {
-                            Text("OFF", fontSize = 9.sp)
-                        }
-                        Spacer(Modifier.width(3.dp))
-                        Button(
-                            onClick = { controller.writeGroupSwitch(gaText, true) },
-                            shape = RoundedCornerShape(5.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                            modifier = Modifier.height(22.dp),
-                        ) {
-                            Text("ON", fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Spacer(Modifier.width(3.dp))
-                    OutlinedButton(
-                        onClick = { controller.readGroupAddress(gaText) },
-                        shape = RoundedCornerShape(5.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                        modifier = Modifier.height(22.dp),
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(10.dp))
-                        Spacer(Modifier.width(2.dp))
-                        Text("Read", fontSize = 9.sp)
-                    }
-                }
+                // Inline ETS Engineering Controls (Switches, Absolute Dimmers, Blinds, HVAC, Read)
+                EtsGaInlineControlBar(
+                    ga = ga,
+                    liveValue = node.liveEntry?.valueText,
+                    controller = controller,
+                )
             }
         }
     }
@@ -3963,8 +3972,32 @@ fun MobileRoomFunctionCard(
         else -> Icons.Default.Widgets
     }
 
+    val allGas = remember(function, project) {
+        function.groupAddresses.mapNotNull { project.findGroupAddress(it) }
+    }
+    val primaryDimmerGa = remember(allGas) {
+        allGas.firstOrNull { ga ->
+            val d = DptCodec.resolveMainDpt(ga.dpt)
+            d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED ||
+                ga.dpt?.contains("5.001") == true || ga.dpt?.contains("5.004") == true ||
+                ga.name.contains("Dimmwert", ignoreCase = true) ||
+                ga.name.contains("Helligkeit", ignoreCase = true) ||
+                ga.name.contains("Brightness", ignoreCase = true) ||
+                ga.name.contains("Value", ignoreCase = true) ||
+                ga.name.contains("Wert", ignoreCase = true) ||
+                ga.name.contains("%")
+        }
+    }
+    val primarySwitchGa = remember(allGas) {
+        allGas.firstOrNull { ga ->
+            val d = DptCodec.resolveMainDpt(ga.dpt)
+            (d == MainDpt.DPT_1_BOOL || ga.name.contains("Schalt", ignoreCase = true) || ga.name.contains("Switch", ignoreCase = true)) &&
+                !ga.name.contains("Blind", ignoreCase = true) && !ga.name.contains("Jalousie", ignoreCase = true)
+        }
+    }
+
     OutlinedCard(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth(),
@@ -3973,6 +4006,7 @@ fun MobileRoomFunctionCard(
             modifier = Modifier.padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Header Row: Icon, Function Name, GA Count
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -4014,73 +4048,196 @@ fun MobileRoomFunctionCard(
                 }
             }
 
-            // GAs inside this function
+            // ETS Unified Dimmer Circuit Master Cockpit (Direct Dimming Control from Building)
+            if (primaryDimmerGa != null) {
+                val dimText = primaryDimmerGa.address.toString()
+                val dimLiveVal = state.groupLiveValues[primaryDimmerGa.address]?.valueText
+                val livePct = remember(dimLiveVal) {
+                    dimLiveVal?.replace("%", "")?.trim()?.toDoubleOrNull()?.toFloat() ?: 0f
+                }
+                var sliderPos by remember(livePct) { mutableFloatStateOf(livePct.coerceIn(0f, 100f)) }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                Text(
+                                    text = "DIMMER: ${primaryDimmerGa.name}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+
+                            if (primarySwitchGa != null) {
+                                val swText = primarySwitchGa.address.toString()
+                                val isSwOn = state.groupLiveValues[primarySwitchGa.address]?.valueText?.equals("ON", ignoreCase = true) == true
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    FilledTonalButton(
+                                        onClick = { controller.writeGroupSwitch(swText, false) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(22.dp),
+                                    ) {
+                                        Text("OFF", fontSize = 8.5.sp)
+                                    }
+                                    Button(
+                                        onClick = { controller.writeGroupSwitch(swText, true) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(22.dp),
+                                        colors = if (isSwOn) ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)) else ButtonDefaults.buttonColors(),
+                                    ) {
+                                        Text("ON", fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Dimmer Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Slider(
+                                value = sliderPos,
+                                onValueChange = { sliderPos = it },
+                                onValueChangeFinished = { controller.writeGroupPercent(dimText, sliderPos.toDouble()) },
+                                valueRange = 0f..100f,
+                                modifier = Modifier.weight(1f).height(24.dp),
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                            ) {
+                                Text(
+                                    text = "${sliderPos.toInt()}%",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+
+                        // Quick Presets Row & Read
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                listOf(0, 25, 50, 75, 100).forEach { pct ->
+                                    FilledTonalButton(
+                                        onClick = { controller.writeGroupPercent(dimText, pct.toDouble()) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(22.dp),
+                                    ) {
+                                        Text("$pct%", fontSize = 8.5.sp)
+                                    }
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = { controller.readGroupAddress(dimText) },
+                                shape = RoundedCornerShape(4.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(22.dp),
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(10.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text("Read", fontSize = 8.5.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // GAs inside this function with full ETS Inline Control Bars
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (gaAddr in function.groupAddresses) {
                     val ga = project.findGroupAddress(gaAddr) ?: GroupAddressInfo(gaAddr, gaAddr.toString())
                     val gaText = ga.address.toString()
                     val liveVal = state.groupLiveValues[ga.address]?.valueText
-                    val isSwitch = ga.dpt?.startsWith("1.") == true || ga.name.contains("Schalten", ignoreCase = true) || ga.name.contains("Switch", ignoreCase = true)
 
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier.fillMaxWidth().clickable { onInspectGa(ga) },
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Row(
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f),
                                 ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                    ) {
+                                        Text(
+                                            text = gaText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                            fontSize = 10.sp,
+                                        )
+                                    }
+
+                                    ga.dpt?.let { dpt ->
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                        ) {
+                                            Text(
+                                                text = dpt,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 9.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                                            )
+                                        }
+                                    }
+
                                     Text(
-                                        text = gaText,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                        fontSize = 10.sp,
+                                        text = ga.name.ifBlank { gaText },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
 
-                                ga.dpt?.let { dpt ->
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant,
-                                    ) {
-                                        Text(
-                                            text = dpt,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 9.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
-                                        )
-                                    }
-                                }
-
-                                Text(
-                                    text = ga.name.ifBlank { gaText },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
                                     color = if (liveVal != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -4090,38 +4247,19 @@ fun MobileRoomFunctionCard(
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
                                         color = if (liveVal != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                                     )
                                 }
-
-                                if (isSwitch) {
-                                    FilledTonalButton(
-                                        onClick = { controller.writeGroupSwitch(gaText, false) },
-                                        shape = RoundedCornerShape(4.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(20.dp),
-                                    ) {
-                                        Text("OFF", fontSize = 8.5.sp)
-                                    }
-                                    Button(
-                                        onClick = { controller.writeGroupSwitch(gaText, true) },
-                                        shape = RoundedCornerShape(4.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(20.dp),
-                                    ) {
-                                        Text("ON", fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                                OutlinedButton(
-                                    onClick = { controller.readGroupAddress(gaText) },
-                                    shape = RoundedCornerShape(4.dp),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                                    modifier = Modifier.height(20.dp),
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(9.dp))
-                                }
                             }
+
+                            // Dedicated ETS Inline Control Bar for each Group Address
+                            EtsGaInlineControlBar(
+                                ga = ga,
+                                liveValue = liveVal,
+                                controller = controller,
+                            )
                         }
                     }
                 }
@@ -4627,89 +4765,12 @@ private fun MobileRoomCockpitCard(
                                     }
                                 }
 
-                                // Interactive Quick Controls per DPT
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    if (isSwitch) {
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupSwitch(gaText, false) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
-                                            modifier = Modifier.height(24.dp),
-                                        ) {
-                                            Text("OFF", fontSize = 9.sp)
-                                        }
-                                        Spacer(Modifier.width(4.dp))
-                                        Button(
-                                            onClick = { controller.writeGroupSwitch(gaText, true) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
-                                            modifier = Modifier.height(24.dp),
-                                        ) {
-                                            Text("ON", fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    } else if (isShutter) {
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupSwitch(gaText, false) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                                            modifier = Modifier.height(24.dp),
-                                        ) {
-                                            Text("▲ UP", fontSize = 9.sp)
-                                        }
-                                        Spacer(Modifier.width(4.dp))
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupSwitch(gaText, true) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                                            modifier = Modifier.height(24.dp),
-                                        ) {
-                                            Text("▼ DOWN", fontSize = 9.sp)
-                                        }
-                                    } else if (isDimmer) {
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupPercent(gaText, 0.0) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                                            modifier = Modifier.height(24.dp),
-                                        ) {
-                                            Text("0%", fontSize = 9.sp)
-                                        }
-                                        Spacer(Modifier.width(4.dp))
-                                        FilledTonalButton(
-                                            onClick = { controller.writeGroupPercent(gaText, 50.0) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                                            modifier = Modifier.height(24.dp),
-                                        ) {
-                                            Text("50%", fontSize = 9.sp)
-                                        }
-                                        Spacer(Modifier.width(4.dp))
-                                        Button(
-                                            onClick = { controller.writeGroupPercent(gaText, 100.0) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                                            modifier = Modifier.height(24.dp),
-                                        ) {
-                                            Text("100%", fontSize = 9.sp)
-                                        }
-                                    }
-
-                                    Spacer(Modifier.width(4.dp))
-                                    OutlinedButton(
-                                        onClick = { controller.readGroupAddress(gaText) },
-                                        shape = RoundedCornerShape(6.dp),
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
-                                        modifier = Modifier.height(24.dp),
-                                    ) {
-                                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(11.dp))
-                                        Spacer(Modifier.width(2.dp))
-                                        Text("Read", fontSize = 9.sp)
-                                    }
-                                }
+                                // Dedicated ETS Inline Control Bar (Switches, Dimmers, Blinds, HVAC, Read)
+                                EtsGaInlineControlBar(
+                                    ga = ga,
+                                    liveValue = liveVal?.valueText,
+                                    controller = controller,
+                                )
                             }
                         }
                     }
