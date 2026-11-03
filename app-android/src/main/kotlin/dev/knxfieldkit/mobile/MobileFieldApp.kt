@@ -343,6 +343,7 @@ fun MobileFieldApp(
                         controller.selectGroupAddressForSender(ga)
                         controller.selectTab(AppTab.SENDER)
                     },
+                    onLocateSender = { addr -> controller.locateDevice(addr) },
                     onDismiss = { inspectedTelegram = null },
                 )
             }

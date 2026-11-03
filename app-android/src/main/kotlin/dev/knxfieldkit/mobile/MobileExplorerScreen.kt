@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -513,10 +515,170 @@ fun MobileExplorerScreen(
                             },
                         )
 
+                        val lineCoupler = activeLine.devices.firstOrNull { it.address.device == 0 }
+
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            // Line Diagnostics & Coupler Health Launchpad Card
+                            item(key = "line-launchpad") {
+                                OutlinedCard(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.outlinedCardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    ),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Router,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                                Text(
+                                                    text = "LINE ${activeLine.id} COMMISSIONING BENCH",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
+
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                            ) {
+                                                Text(
+                                                    text = "${activeLine.devices.size} devices • ${activeLine.mediumType}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    fontSize = 9.sp,
+                                                )
+                                            }
+                                        }
+
+                                        lineCoupler?.let { c ->
+                                            val cPing = state.deviceStatuses[c.address]
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.surface,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                        modifier = Modifier.weight(1f),
+                                                    ) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                                        ) {
+                                                            Text(
+                                                                text = c.address.toString(),
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontFamily = FontFamily.Monospace,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                            )
+                                                        }
+                                                        Text(
+                                                            text = c.name,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                    }
+
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        if (cPing != null) {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = if (cPing.reachable) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                                                            ) {
+                                                                Text(
+                                                                    text = if (cPing.reachable) "${cPing.latencyMs}ms" else "TIMEOUT",
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = if (cPing.reachable) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                                    fontSize = 9.sp,
+                                                                )
+                                                            }
+                                                        }
+
+                                                        FilledTonalButton(
+                                                            onClick = { controller.pingIndividualDevice(c.address.toString()) },
+                                                            shape = RoundedCornerShape(6.dp),
+                                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                                            modifier = Modifier.height(24.dp),
+                                                        ) {
+                                                            Text("Ping .0", fontSize = 9.sp)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 1-Tap Diagnostic Launchers
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            FilledTonalButton(
+                                                onClick = {
+                                                    controller.selectTab(AppTab.DIAGNOSTICS)
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.weight(1f).height(28.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            ) {
+                                                Icon(Icons.Default.GridOn, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                Spacer(Modifier.width(3.dp))
+                                                Text("16×16 Matrix", fontSize = 10.sp)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    activeLine.devices.forEach { dev ->
+                                                        controller.pingIndividualDevice(dev.address.toString())
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.weight(1f).height(28.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            ) {
+                                                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                Spacer(Modifier.width(3.dp))
+                                                Text("Ping All (${activeLine.devices.size})", fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             item(key = "line-dev-header") {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1023,6 +1185,10 @@ fun MobileExplorerScreen(
                     val directDevices = remember(currentLoc, project) {
                         currentLoc.deviceAddresses.mapNotNull { project.findDevice(it) }
                     }
+                    val spaceGas = remember(currentLoc, project) {
+                        val allInBranch = currentLoc.collectAllDeviceAddresses().mapNotNull { project.findDevice(it) }
+                        allInBranch.flatMap { it.groupAddresses }.distinct().mapNotNull { project.findGroupAddress(it) }
+                    }
 
                     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
@@ -1154,6 +1320,18 @@ fun MobileExplorerScreen(
                                     MobileBuildingSpaceCard(
                                         space = child,
                                         onClick = { locationPath = locationPath + child },
+                                    )
+                                }
+                            }
+
+                            // Room Commissioning Cockpit & Live Circuit Controls
+                            if (spaceGas.isNotEmpty()) {
+                                item(key = "space-cockpit") {
+                                    MobileRoomCockpitCard(
+                                        location = currentLoc,
+                                        groupAddresses = spaceGas,
+                                        state = state,
+                                        controller = controller,
                                     )
                                 }
                             }
@@ -3064,6 +3242,409 @@ private fun MobileBreadcrumbBar(
             )
             if (trailingAction != null) {
                 trailingAction()
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Room Commissioning Cockpit Card (ETS Inside / ETS6 Raum-Bedienfeld)
+// ---------------------------------------------------------------------------
+@Composable
+private fun MobileRoomCockpitCard(
+    location: BuildingLocation,
+    groupAddresses: List<GroupAddressInfo>,
+    state: AppUiState,
+    controller: AppController,
+) {
+    var expanded by remember { mutableStateOf(true) }
+    var filterCategory by remember { mutableStateOf("ALL") }
+
+    val switchGas = remember(groupAddresses) {
+        groupAddresses.filter {
+            DptCodec.resolveMainDpt(it.dpt) == MainDpt.DPT_1_BOOL &&
+                !it.name.contains("Blind", ignoreCase = true) &&
+                !it.name.contains("Jalousie", ignoreCase = true) &&
+                !it.name.contains("Rollladen", ignoreCase = true) &&
+                !it.name.contains("Status", ignoreCase = true) &&
+                !it.name.contains("Rückmeldung", ignoreCase = true)
+        }
+    }
+
+    val dimmerGas = remember(groupAddresses) {
+        groupAddresses.filter {
+            val d = DptCodec.resolveMainDpt(it.dpt)
+            (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED || it.name.contains("Dimmen", ignoreCase = true)) &&
+                !it.name.contains("Status", ignoreCase = true)
+        }
+    }
+
+    val shutterGas = remember(groupAddresses) {
+        groupAddresses.filter {
+            it.name.contains("Blind", ignoreCase = true) ||
+                it.name.contains("Jalousie", ignoreCase = true) ||
+                it.name.contains("Rollladen", ignoreCase = true) ||
+                it.name.contains("Louver", ignoreCase = true) ||
+                it.name.contains("Shutter", ignoreCase = true)
+        }
+    }
+
+    val climateGas = remember(groupAddresses) {
+        groupAddresses.filter {
+            DptCodec.resolveMainDpt(it.dpt) == MainDpt.DPT_9_FLOAT ||
+                it.name.contains("Temp", ignoreCase = true) ||
+                it.name.contains("Thermostat", ignoreCase = true) ||
+                it.name.contains("Heizen", ignoreCase = true) ||
+                it.name.contains("HVAC", ignoreCase = true)
+        }
+    }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Header Row with collapse/expand toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "ROOM COMMISSIONING COCKPIT",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "${location.name} • ${groupAddresses.size} functional circuits",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Batch Room Actions Bar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (switchGas.isNotEmpty()) {
+                            Button(
+                                onClick = { switchGas.forEach { controller.writeGroupSwitch(it.address.toString(), true) } },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                            ) {
+                                Icon(Icons.Default.Lightbulb, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("All ON", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { switchGas.forEach { controller.writeGroupSwitch(it.address.toString(), false) } },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                            ) {
+                                Text("All OFF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (shutterGas.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = { shutterGas.forEach { controller.writeGroupSwitch(it.address.toString(), false) } },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text("Blinds ▲", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Category Filter Chips
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        item {
+                            FilterChip(
+                                selected = filterCategory == "ALL",
+                                onClick = { filterCategory = "ALL" },
+                                label = { Text("All (${groupAddresses.size})", fontSize = 10.sp) },
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.height(26.dp),
+                            )
+                        }
+                        if (switchGas.isNotEmpty()) {
+                            item {
+                                FilterChip(
+                                    selected = filterCategory == "LIGHTS",
+                                    onClick = { filterCategory = "LIGHTS" },
+                                    label = { Text("Lights (${switchGas.size})", fontSize = 10.sp) },
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.height(26.dp),
+                                )
+                            }
+                        }
+                        if (dimmerGas.isNotEmpty()) {
+                            item {
+                                FilterChip(
+                                    selected = filterCategory == "DIMMERS",
+                                    onClick = { filterCategory = "DIMMERS" },
+                                    label = { Text("Dimmers (${dimmerGas.size})", fontSize = 10.sp) },
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.height(26.dp),
+                                )
+                            }
+                        }
+                        if (shutterGas.isNotEmpty()) {
+                            item {
+                                FilterChip(
+                                    selected = filterCategory == "BLINDS",
+                                    onClick = { filterCategory = "BLINDS" },
+                                    label = { Text("Blinds (${shutterGas.size})", fontSize = 10.sp) },
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.height(26.dp),
+                                )
+                            }
+                        }
+                        if (climateGas.isNotEmpty()) {
+                            item {
+                                FilterChip(
+                                    selected = filterCategory == "CLIMATE",
+                                    onClick = { filterCategory = "CLIMATE" },
+                                    label = { Text("Climate (${climateGas.size})", fontSize = 10.sp) },
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.height(26.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    val displayedGas = when (filterCategory) {
+                        "LIGHTS" -> switchGas
+                        "DIMMERS" -> dimmerGas
+                        "BLINDS" -> shutterGas
+                        "CLIMATE" -> climateGas
+                        else -> groupAddresses
+                    }
+
+                    // Display up to 12 room functional circuit cards
+                    displayedGas.take(12).forEach { ga ->
+                        val gaText = ga.address.toString()
+                        val liveVal = state.groupLiveValues[ga.address]
+                        val isSwitch = switchGas.contains(ga)
+                        val isDimmer = dimmerGas.contains(ga)
+                        val isShutter = shutterGas.contains(ga)
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                        ) {
+                                            Text(
+                                                text = gaText,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                fontSize = 9.sp,
+                                            )
+                                        }
+                                        Text(
+                                            text = ga.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+
+                                    liveVal?.let { lv ->
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = if (lv.valueText.equals("ON", ignoreCase = true) || lv.valueText.contains("1"))
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ) {
+                                            Text(
+                                                text = lv.valueText,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = if (lv.valueText.equals("ON", ignoreCase = true) || lv.valueText.contains("1"))
+                                                    MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                fontSize = 9.5.sp,
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Interactive Quick Controls per DPT
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (isSwitch) {
+                                        FilledTonalButton(
+                                            onClick = { controller.writeGroupSwitch(gaText, false) },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                        ) {
+                                            Text("OFF", fontSize = 9.sp)
+                                        }
+                                        Spacer(Modifier.width(4.dp))
+                                        Button(
+                                            onClick = { controller.writeGroupSwitch(gaText, true) },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                        ) {
+                                            Text("ON", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else if (isShutter) {
+                                        FilledTonalButton(
+                                            onClick = { controller.writeGroupSwitch(gaText, false) },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                        ) {
+                                            Text("▲ UP", fontSize = 9.sp)
+                                        }
+                                        Spacer(Modifier.width(4.dp))
+                                        FilledTonalButton(
+                                            onClick = { controller.writeGroupSwitch(gaText, true) },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                        ) {
+                                            Text("▼ DOWN", fontSize = 9.sp)
+                                        }
+                                    } else if (isDimmer) {
+                                        FilledTonalButton(
+                                            onClick = { controller.writeGroupPercent(gaText, 0.0) },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                        ) {
+                                            Text("0%", fontSize = 9.sp)
+                                        }
+                                        Spacer(Modifier.width(4.dp))
+                                        FilledTonalButton(
+                                            onClick = { controller.writeGroupPercent(gaText, 50.0) },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                        ) {
+                                            Text("50%", fontSize = 9.sp)
+                                        }
+                                        Spacer(Modifier.width(4.dp))
+                                        Button(
+                                            onClick = { controller.writeGroupPercent(gaText, 100.0) },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                        ) {
+                                            Text("100%", fontSize = 9.sp)
+                                        }
+                                    }
+
+                                    Spacer(Modifier.width(4.dp))
+                                    OutlinedButton(
+                                        onClick = { controller.readGroupAddress(gaText) },
+                                        shape = RoundedCornerShape(6.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                        modifier = Modifier.height(24.dp),
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(11.dp))
+                                        Spacer(Modifier.width(2.dp))
+                                        Text("Read", fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

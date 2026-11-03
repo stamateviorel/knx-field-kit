@@ -712,6 +712,7 @@ fun MobileTelegramDetailSheet(
     item: EnrichedTelegram,
     onReplay: () -> Unit,
     onOpenSender: (String) -> Unit,
+    onLocateSender: ((IndividualAddress) -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val t = item.telegram
@@ -809,7 +810,26 @@ fun MobileTelegramDetailSheet(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Replay Frame", fontWeight = FontWeight.Bold)
+                        Text("Replay Frame", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+
+                    if (onLocateSender != null) {
+                        FilledTonalButton(
+                            onClick = {
+                                onLocateSender(t.source)
+                                onDismiss()
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.1f),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                            ),
+                        ) {
+                            Icon(Icons.Default.Lightbulb, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Locate Sender", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                     OutlinedButton(
                         onClick = {
