@@ -1,5 +1,6 @@
 package dev.knxfieldkit.mobile
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,6 +55,7 @@ fun MobileMonitorScreen(
     val health = remember(state.telegrams) { BusHealthAnalyzer.analyze(state.telegrams) }
     val q = state.monitorSearchQuery.trim().lowercase()
     var apciFilter by remember { mutableStateOf("ALL") } // "ALL", "WRITE", "READ", "RESP"
+    var showTopTalkers by remember { mutableStateOf(false) }
 
     var quickTestGaText by remember(state.selectedGroupAddressInput) {
         mutableStateOf(state.selectedGroupAddressInput.ifBlank { "1/1/1" })
@@ -118,6 +120,198 @@ fun MobileMonitorScreen(
                 accent = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        // Interactive TP1 Bus Traffic Flow Visualizer Bar
+        val isStorm = health.loadLevel == BusLoadLevel.STORM
+        val isElevated = health.loadLevel == BusLoadLevel.ELEVATED
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = when {
+                isStorm -> MaterialTheme.colorScheme.errorContainer
+                isElevated -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
+                else -> MaterialTheme.colorScheme.surfaceContainer
+            },
+            border = BorderStroke(
+                1.dp,
+                when {
+                    isStorm -> MaterialTheme.colorScheme.error
+                    isElevated -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.outlineVariant
+                }
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isStorm -> MaterialTheme.colorScheme.error
+                                        isElevated -> MaterialTheme.colorScheme.tertiary
+                                        else -> MaterialTheme.colorScheme.primary
+                                    }
+                                )
+                        )
+                        Text(
+                            text = when {
+                                isStorm -> "TELEGRAM STORM (${String.format(Locale.US, "%.1f", health.telegramsPerSecond)} msg/s)"
+                                isElevated -> "ELEVATED TRAFFIC (${String.format(Locale.US, "%.1f", health.telegramsPerSecond)} msg/s)"
+                                else -> "NORMAL BUS TRAFFIC (${String.format(Locale.US, "%.1f", health.telegramsPerSecond)} msg/s)"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                isStorm -> MaterialTheme.colorScheme.onErrorContainer
+                                isElevated -> MaterialTheme.colorScheme.onTertiaryContainer
+                                else -> MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { showTopTalkers = !showTopTalkers },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text(
+                            text = if (showTopTalkers) "Hide Talkers" else "Top Talkers (${health.topSourceDevices.size})",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Icon(
+                            imageVector = if (showTopTalkers) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+
+                // Traffic Load Progress Bar
+                LinearProgressIndicator(
+                    progress = { (health.estimatedTp1LoadPercent / 100.0).toFloat().coerceIn(0.01f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = when {
+                        isStorm -> MaterialTheme.colorScheme.error
+                        isElevated -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.primary
+                    },
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                )
+
+                // Expandable Top Talkers Tray
+                AnimatedVisibility(visible = showTopTalkers) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Text(
+                            text = "TOP SOURCE DEVICES ON BUS",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        health.topSourceDevices.forEach { talker ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(3.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                    ) {
+                                        Text(
+                                            text = talker.address,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                            fontSize = 9.sp,
+                                        )
+                                    }
+                                    Text(
+                                        text = talker.label,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        text = "${talker.telegramCount} msgs",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                    )
+                                    FilledTonalButton(
+                                        onClick = { controller.setMonitorSearch(talker.address) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(20.dp),
+                                    ) {
+                                        Text("Filter", fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (health.unansweredReadAddresses.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(12.dp))
+                                    Text(
+                                        text = "Unanswered Read Requests: ${health.unansweredReadAddresses.joinToString()}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 9.5.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // ETS Pinned Inline Quick-Test / Quick-Send Bar

@@ -647,6 +647,51 @@ class PureKnxNetIpClient(
             }
         }
 
+    override suspend fun locateDevice(address: IndividualAddress, flashCount: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                sendCemiFrame(KnxNetIpCodec.buildCemiTransportControl(assignedAddress, address, tpci = 0x80))
+                delay(20L)
+                val count = flashCount.coerceIn(1, 10)
+                for (i in 0 until count) {
+                    val asduOn = byteArrayOf(0x00, 54.toByte(), 0x10, 0x01, 0x01)
+                    sendCemiFrame(
+                        KnxNetIpCodec.buildCemiIndividualApdu(
+                            src = assignedAddress,
+                            dst = address,
+                            numbered = true,
+                            seq = (i * 2) and 0x0F,
+                            apciService = KnxNetIpCodec.APCI_PROPERTY_VALUE_WRITE,
+                            asdu = asduOn,
+                        )
+                    )
+                    delay(300L)
+                    val asduOff = byteArrayOf(0x00, 54.toByte(), 0x10, 0x01, 0x00)
+                    sendCemiFrame(
+                        KnxNetIpCodec.buildCemiIndividualApdu(
+                            src = assignedAddress,
+                            dst = address,
+                            numbered = true,
+                            seq = (i * 2 + 1) and 0x0F,
+                            apciService = KnxNetIpCodec.APCI_PROPERTY_VALUE_WRITE,
+                            asdu = asduOff,
+                        )
+                    )
+                    delay(300L)
+                }
+                runCatching {
+                    sendCemiFrame(KnxNetIpCodec.buildCemiTransportControl(assignedAddress, address, tpci = 0x81))
+                }
+                true
+            } catch (_: Exception) {
+                repeat(flashCount.coerceIn(1, 10)) {
+                    pingDevice(address, 500L)
+                    delay(200L)
+                }
+                true
+            }
+        }
+
     override suspend fun writeProgrammingAddress(
         newAddress: IndividualAddress,
         timeoutMs: Long,
@@ -788,6 +833,7 @@ object KnxNetIpCodec {
     const val APCI_RESTART = 0x0380
     const val APCI_PROPERTY_VALUE_READ = 0x03D5
     const val APCI_PROPERTY_VALUE_RESPONSE = 0x03D6
+    const val APCI_PROPERTY_VALUE_WRITE = 0x03D7
 
     data class ConnectResponseData(
         val channelId: Int,

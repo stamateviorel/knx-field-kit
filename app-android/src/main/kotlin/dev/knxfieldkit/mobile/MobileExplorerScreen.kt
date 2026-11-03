@@ -2857,6 +2857,23 @@ private fun BuildingTreeDeviceItem(
                     }
                 }
 
+                val isLocatingThis = state.locatingDeviceAddress == dev.address
+                FilledTonalButton(
+                    onClick = { controller.locateDevice(dev.address) },
+                    enabled = state.locatingDeviceAddress == null || isLocatingThis,
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 2.dp),
+                    modifier = Modifier.height(24.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (isLocatingThis) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (isLocatingThis) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                ) {
+                    Icon(Icons.Default.Lightbulb, contentDescription = null, modifier = Modifier.size(11.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text(if (isLocatingThis) "Blink..." else "Locate", style = MaterialTheme.typography.labelSmall, fontSize = 8.5.sp)
+                }
+
                 FilledTonalButton(
                     onClick = { controller.pingIndividualDevice(dev.address.toString()) },
                     shape = RoundedCornerShape(6.dp),

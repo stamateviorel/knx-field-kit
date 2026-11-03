@@ -46,6 +46,8 @@ interface KnxBusClient : AutoCloseable {
 
     suspend fun restartDevice(address: IndividualAddress, timeoutMs: Long = 2_000L): Boolean
 
+    suspend fun locateDevice(address: IndividualAddress, flashCount: Int = 4): Boolean
+
     suspend fun writeProgrammingAddress(newAddress: IndividualAddress, timeoutMs: Long = 3_000L): IndividualAddressWriteResult
 
     /**

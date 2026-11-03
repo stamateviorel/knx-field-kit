@@ -171,3 +171,25 @@ data class DeviceDiagnosticDetails(
     val runState: String? = null,
     val notes: List<String> = emptyList()
 )
+
+enum class DuplicateIssueType(val label: String) {
+    PROJECT_DUPLICATE("Project Duplicate"),
+    HARDWARE_CONFLICT("Mask / Serial Conflict"),
+    ROGUE_DEVICE("Rogue Device on Free Address"),
+}
+
+data class DuplicateAddressIssue(
+    val address: IndividualAddress,
+    val type: DuplicateIssueType,
+    val description: String,
+    val projectDevice: ProjectDevice? = null,
+    val livePingResult: DevicePingResult? = null,
+)
+
+data class DuplicateScanReport(
+    val area: Int,
+    val line: Int,
+    val totalChecked: Int,
+    val issues: List<DuplicateAddressIssue>,
+    val scannedAtEpochMs: Long = System.currentTimeMillis(),
+)

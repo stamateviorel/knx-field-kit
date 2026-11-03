@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -397,6 +398,36 @@ class CalimeroKnxBusClient(
                 }
             } catch (_: Exception) {
                 false
+            } finally {
+                mgmt.detach()
+            }
+        }
+
+    override suspend fun locateDevice(address: IndividualAddress, flashCount: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            val link = requireConnectedLink()
+            val mgmt = ManagementClientImpl(link)
+            try {
+                mgmt.responseTimeout(Duration.ofMillis(600L))
+                val dst = mgmt.createDestination(CalimeroIndividualAddress(address.raw), false)
+                try {
+                    val count = flashCount.coerceIn(1, 10)
+                    for (i in 0 until count) {
+                        runCatching { mgmt.writeProperty(dst, 0, 54, 1, 1, byteArrayOf(0x01)) }
+                        delay(300L)
+                        runCatching { mgmt.writeProperty(dst, 0, 54, 1, 1, byteArrayOf(0x00)) }
+                        delay(300L)
+                    }
+                    true
+                } finally {
+                    dst.destroy()
+                }
+            } catch (_: Exception) {
+                repeat(flashCount.coerceIn(1, 10)) {
+                    pingDevice(address, 500L)
+                    delay(200L)
+                }
+                true
             } finally {
                 mgmt.detach()
             }

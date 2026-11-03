@@ -18,6 +18,9 @@ import dev.knxfieldkit.model.ConnectionState
 import dev.knxfieldkit.model.DeviceDiagnosticDetails
 import dev.knxfieldkit.model.DevicePingResult
 import dev.knxfieldkit.model.DptCodec
+import dev.knxfieldkit.model.DuplicateAddressIssue
+import dev.knxfieldkit.model.DuplicateIssueType
+import dev.knxfieldkit.model.DuplicateScanReport
 import dev.knxfieldkit.model.EnrichedTelegram
 import dev.knxfieldkit.model.GatewayEndpoint
 import dev.knxfieldkit.model.GroupAddress
@@ -152,6 +155,9 @@ data class AppUiState(
     val isRunningFullSiteCheck: Boolean = false,
     val siteCheckProgressText: String = "",
     val siteCheckReport: SiteCheckReport? = null,
+    val locatingDeviceAddress: IndividualAddress? = null,
+    val duplicateScanReport: DuplicateScanReport? = null,
+    val isScanningDuplicates: Boolean = false,
     val statusMessage: String = "Ready — Open a .knxproj / .knxkeys file to begin or connect to KNXnet/IP",
 )
 
@@ -1056,6 +1062,108 @@ class AppController(
                 setStatus(if (ok) "Sent KNX A_Restart to $ia (device rebooting)" else "Device $ia did not accept A_Restart")
             } catch (e: Exception) {
                 setStatus("Restart failed: ${e.message}")
+            }
+        }
+    }
+
+    fun locateDevice(address: IndividualAddress, flashCount: Int = 4) {
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    locatingDeviceAddress = address,
+                    statusMessage = "💡 Flashing Programming LED on $address (${flashCount}x)...",
+                )
+            }
+            try {
+                activeClient.locateDevice(address, flashCount)
+                _uiState.update {
+                    it.copy(
+                        locatingDeviceAddress = null,
+                        statusMessage = "Finished flashing Programming LED on $address",
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        locatingDeviceAddress = null,
+                        statusMessage = "Locate $address failed: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    fun scanDuplicatePhysicalAddresses(area: Int, line: Int) {
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isScanningDuplicates = true,
+                    statusMessage = "ETS Duplicate Check: Scanning Line $area.$line for address collisions & conflicts...",
+                )
+            }
+            try {
+                val issues = mutableListOf<DuplicateAddressIssue>()
+                val proj = _uiState.value.project
+                val lineDevices = proj?.areas?.find { it.area == area }?.lines?.find { it.line == line }?.devices.orEmpty()
+
+                // 1. Check for duplicate assignments inside the loaded project file
+                val groupedByAddress = lineDevices.groupBy { it.address }
+                for ((addr, devs) in groupedByAddress) {
+                    if (devs.size > 1) {
+                        issues.add(
+                            DuplicateAddressIssue(
+                                address = addr,
+                                type = DuplicateIssueType.PROJECT_DUPLICATE,
+                                description = "Address $addr assigned to ${devs.size} devices in project: ${devs.joinToString { it.name }}",
+                                projectDevice = devs.first(),
+                            )
+                        )
+                    }
+                }
+
+                // 2. Ping active line devices to verify hardware mask against project records
+                var pingCount = 0
+                for (dev in lineDevices) {
+                    pingCount++
+                    val ping = activeClient.pingDevice(dev.address, 1_000L)
+                    if (ping.reachable) {
+                        val expMask = dev.maskVersion?.uppercase()?.removePrefix("MV-")?.trim()
+                        if (expMask != null && ping.maskVersionHex != null && expMask != ping.maskVersionHex) {
+                            issues.add(
+                                DuplicateAddressIssue(
+                                    address = dev.address,
+                                    type = DuplicateIssueType.HARDWARE_CONFLICT,
+                                    description = "Hardware mask ${ping.maskVersionHex} does not match ETS project mask $expMask on '${dev.name}'",
+                                    projectDevice = dev,
+                                    livePingResult = ping,
+                                )
+                            )
+                        }
+                    }
+                    delay(50L)
+                }
+
+                val report = DuplicateScanReport(
+                    area = area,
+                    line = line,
+                    totalChecked = maxOf(lineDevices.size, pingCount),
+                    issues = issues,
+                )
+                _uiState.update {
+                    it.copy(
+                        isScanningDuplicates = false,
+                        duplicateScanReport = report,
+                        statusMessage = if (issues.isEmpty()) "Duplicate scan on $area.$line complete: 0 collisions detected (All ${report.totalChecked} devices OK)"
+                        else "Duplicate scan on $area.$line: Detected ${issues.size} address/hardware conflict(s)!",
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isScanningDuplicates = false,
+                        statusMessage = "Duplicate check failed: ${e.message}",
+                    )
+                }
             }
         }
     }

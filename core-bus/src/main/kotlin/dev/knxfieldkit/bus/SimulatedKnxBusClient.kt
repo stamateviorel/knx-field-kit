@@ -728,6 +728,22 @@ class SimulatedKnxBusClient(
         return false
     }
 
+    override suspend fun locateDevice(address: IndividualAddress, flashCount: Int): Boolean {
+        ensureConnected()
+        val dev = virtualDevices[address] ?: return false
+        val wasProg = dev.programmingMode
+        for (i in 0 until flashCount.coerceIn(1, 10)) {
+            dev.programmingMode = true
+            emitTelegram(address, apci = ApciType.INDIVIDUAL_ADDR_RESPONSE, payload = byteArrayOf(0x01))
+            delay(280L)
+            dev.programmingMode = false
+            emitTelegram(address, apci = ApciType.INDIVIDUAL_ADDR_RESPONSE, payload = byteArrayOf(0x00))
+            delay(280L)
+        }
+        dev.programmingMode = wasProg
+        return true
+    }
+
     override suspend fun writeProgrammingAddress(
         newAddress: IndividualAddress,
         timeoutMs: Long,

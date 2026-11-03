@@ -1245,6 +1245,22 @@ private fun LineDiagnosticsContent(
                                             Spacer(Modifier.width(4.dp))
                                             Text("Info", fontSize = 11.sp)
                                         }
+                                        val isLocatingThis = state.locatingDeviceAddress == addr
+                                        FilledTonalButton(
+                                            onClick = { controller.locateDevice(addr) },
+                                            enabled = state.locatingDeviceAddress == null || isLocatingThis,
+                                            modifier = Modifier.weight(1.1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                            colors = ButtonDefaults.filledTonalButtonColors(
+                                                containerColor = if (isLocatingThis) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
+                                                contentColor = if (isLocatingThis) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            ),
+                                        ) {
+                                            Icon(Icons.Default.Lightbulb, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            Spacer(Modifier.width(3.dp))
+                                            Text(if (isLocatingThis) "Blink..." else "Locate", fontSize = 11.sp)
+                                        }
                                         pDev?.let { dev ->
                                             OutlinedButton(
                                                 onClick = {
@@ -1653,6 +1669,9 @@ private fun DeviceInfoContent(
                         }
                     }
 
+                    val parsedTargetIa = IndividualAddress.parseOrNull(targetDeviceText)
+                    val isLocatingThis = parsedTargetIa != null && state.locatingDeviceAddress == parsedTargetIa
+
                     // Diagnostic Action Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1688,6 +1707,22 @@ private fun DeviceInfoContent(
                             Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(if (state.isReadingDiagnostics) "Reading..." else "BCU Info", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+
+                        Button(
+                            onClick = { parsedTargetIa?.let { controller.locateDevice(it) } },
+                            enabled = parsedTargetIa != null && (state.locatingDeviceAddress == null || isLocatingThis),
+                            modifier = Modifier.weight(1.1f),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isLocatingThis) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = if (isLocatingThis) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer,
+                            ),
+                        ) {
+                            Icon(Icons.Default.Lightbulb, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isLocatingThis) "Blinking..." else "Flash LED", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
 
                         OutlinedButton(
@@ -2299,6 +2334,14 @@ private fun ProgrammingModeContent(
                     }
                 }
             }
+        }
+
+        // ETS Duplicate Physical Address & Conflict Scanner
+        item {
+            DuplicateAddressScannerCard(
+                state = state,
+                controller = controller,
+            )
         }
     }
 }
@@ -3288,6 +3331,266 @@ private fun MobileTroubleshootAssistantSheet(
                             color = MaterialTheme.colorScheme.onSurface,
                             lineHeight = 18.sp,
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ETS Duplicate Physical Address & Hardware Conflict Scanner Card
+// ---------------------------------------------------------------------------
+@Composable
+private fun DuplicateAddressScannerCard(
+    state: AppUiState,
+    controller: AppController,
+) {
+    val proj = state.project
+    val report = state.duplicateScanReport
+    val defaultLine = proj?.areas?.firstOrNull()?.lines?.firstOrNull()
+    var selectedArea by remember { mutableStateOf(defaultLine?.area ?: 1) }
+    var selectedLine by remember { mutableStateOf(defaultLine?.line ?: 1) }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Rule,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "DUPLICATE ADDRESS SCANNER",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "ETS Prüfen auf doppelte Adressen",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    Text(
+                        text = "Line $selectedArea.$selectedLine",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            Text(
+                text = "Scans TP1 Line $selectedArea.$selectedLine against live hardware responses to detect duplicate address assignments, conflicting BCU masks, and ghost devices.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp,
+            )
+
+            Button(
+                onClick = { controller.scanDuplicatePhysicalAddresses(selectedArea, selectedLine) },
+                enabled = !state.isScanningDuplicates,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (state.isScanningDuplicates) "Scanning Line $selectedArea.$selectedLine for Duplicates..." else "Scan Line $selectedArea.$selectedLine for Duplicates",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                )
+            }
+
+            if (state.isScanningDuplicates) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            // Results Display
+            report?.let { rep ->
+                if (rep.issues.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Column {
+                                Text(
+                                    text = "0 Duplicates / Conflicts Detected",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                                Text(
+                                    text = "All ${rep.totalChecked} checked devices on Line ${rep.area}.${rep.line} verified with unique physical addresses and consistent masks.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Text(
+                                    text = "${rep.issues.size} Conflict(s) Detected on Line ${rep.area}.${rep.line}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                            }
+                        }
+
+                        rep.issues.forEach { issue ->
+                            OutlinedCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                                colors = CardDefaults.outlinedCardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                                        ) {
+                                            Text(
+                                                text = issue.type.label.uppercase(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            )
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ) {
+                                            Text(
+                                                text = issue.address.toString(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            )
+                                        }
+                                    }
+
+                                    Text(
+                                        text = issue.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        TextButton(
+                                            onClick = { controller.locateDevice(issue.address) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        ) {
+                                            Icon(Icons.Default.Lightbulb, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Locate / Flash", fontSize = 11.sp)
+                                        }
+                                        Spacer(Modifier.width(6.dp))
+                                        TextButton(
+                                            onClick = { controller.inspectDeviceDiagnostics(issue.address.toString()) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        ) {
+                                            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("BCU Info", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
