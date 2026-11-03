@@ -88,14 +88,29 @@ data class TopologyArea(
     val lines: List<TopologyLine> = emptyList(),
 )
 
+data class BuildingFunction(
+    val id: String,
+    val name: String,
+    val type: String = "FT-0",
+    val groupAddresses: List<GroupAddress> = emptyList(),
+)
+
 data class BuildingLocation(
     val name: String,
     val type: String = "Room",
     val deviceAddresses: List<IndividualAddress> = emptyList(),
+    val functions: List<BuildingFunction> = emptyList(),
     val children: List<BuildingLocation> = emptyList(),
+    val id: String = "",
 ) {
     fun collectAllDeviceAddresses(): List<IndividualAddress> =
         (deviceAddresses + children.flatMap { it.collectAllDeviceAddresses() }).distinct()
+
+    fun collectAllFunctions(): List<BuildingFunction> =
+        (functions + children.flatMap { it.collectAllFunctions() })
+
+    fun collectAllGroupAddresses(): List<GroupAddress> =
+        (functions.flatMap { it.groupAddresses } + children.flatMap { it.collectAllGroupAddresses() }).distinct()
 }
 
 data class KeyringInterface(

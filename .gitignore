@@ -26,3 +26,7 @@ Desktop.ini
 # Local AI scratch outputs & root APK copy
 .local-ai-tmp/
 *.apk
+
+inspect_knx/
+latest_final.knxproj
+

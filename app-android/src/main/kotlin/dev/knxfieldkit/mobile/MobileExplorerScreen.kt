@@ -14,6 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.Launch
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -56,6 +58,7 @@ sealed interface BuildingTreeNode {
         override val name: String,
         val location: BuildingLocation,
         val totalDevices: Int,
+        val totalFunctions: Int,
         val isExpanded: Boolean,
         val childCount: Int,
     ) : BuildingTreeNode
@@ -67,9 +70,30 @@ sealed interface BuildingTreeNode {
         val location: BuildingLocation,
         val totalDevices: Int,
         val directDevicesCount: Int,
+        val directFunctionsCount: Int,
         val isExpanded: Boolean,
         val childCount: Int,
         val path: List<BuildingLocation>,
+    ) : BuildingTreeNode
+
+    data class FunctionNode(
+        override val id: String,
+        override val depth: Int,
+        override val name: String,
+        val function: BuildingFunction,
+        val location: BuildingLocation,
+        val isExpanded: Boolean,
+        val gaCount: Int,
+        val path: List<BuildingLocation>,
+    ) : BuildingTreeNode
+
+    data class FunctionGaLeafNode(
+        override val id: String,
+        override val depth: Int,
+        override val name: String,
+        val function: BuildingFunction,
+        val ga: GroupAddressInfo,
+        val liveEntry: GroupValueEntry?,
     ) : BuildingTreeNode
 
     data class DeviceNode(
@@ -78,6 +102,8 @@ sealed interface BuildingTreeNode {
         override val name: String,
         val device: ProjectDevice,
         val path: List<BuildingLocation>,
+        val isOnline: Boolean? = null,
+        val isProgMode: Boolean = false,
     ) : BuildingTreeNode
 }
 
@@ -1459,8 +1485,8 @@ fun MobileExplorerScreen(
                     )
                 } else if (buildingViewMode == BuildingViewMode.TREE) {
                     // ETS Expandable Tree Hierarchy View
-                    val visibleTreeNodes = remember(project, expandedTreeIds) {
-                        buildVisibleBuildingTree(project.locations, project, expandedTreeIds)
+                    val visibleTreeNodes = remember(project, expandedTreeIds, state.groupLiveValues, state.deviceStatuses, state.programmingModeDevices) {
+                        buildVisibleBuildingTree(project.locations, project, state, expandedTreeIds)
                     }
 
                     LazyColumn(
@@ -1490,6 +1516,7 @@ fun MobileExplorerScreen(
                                                 fun collect(loc: BuildingLocation, prefix: String) {
                                                     val path = if (prefix.isEmpty()) loc.name else "$prefix/${loc.name}"
                                                     all += path
+                                                    loc.functions.forEach { all += "$path/fn:${it.id}" }
                                                     loc.children.forEach { collect(it, path) }
                                                 }
                                                 project.locations.forEach { collect(it, "") }
@@ -1626,6 +1653,29 @@ fun MobileExplorerScreen(
                                                     expandedTreeIds + treeNode.id
                                                 }
                                             },
+                                            onSelectSpace = {
+                                                locationPath = treeNode.path
+                                                buildingViewMode = BuildingViewMode.CARDS
+                                            },
+                                        )
+                                    }
+                                    is BuildingTreeNode.FunctionNode -> {
+                                        BuildingTreeFunctionItem(
+                                            node = treeNode,
+                                            onToggle = {
+                                                expandedTreeIds = if (treeNode.isExpanded) {
+                                                    expandedTreeIds - treeNode.id
+                                                } else {
+                                                    expandedTreeIds + treeNode.id
+                                                }
+                                            },
+                                        )
+                                    }
+                                    is BuildingTreeNode.FunctionGaLeafNode -> {
+                                        BuildingTreeGaLeafItem(
+                                            node = treeNode,
+                                            controller = controller,
+                                            onInspect = { onInspectGroupSheet(treeNode.ga) },
                                         )
                                     }
                                     is BuildingTreeNode.DeviceNode -> {
@@ -1647,12 +1697,14 @@ fun MobileExplorerScreen(
                     // Level 1 / 2: Inside a Building, Floor, Room, or Space (Folders View)
                     val currentLoc = locationPath.last()
                     val totalBranchDevices = remember(currentLoc) { currentLoc.collectAllDeviceAddresses() }
+                    val totalBranchFunctions = remember(currentLoc) { currentLoc.collectAllFunctions() }
                     val directDevices = remember(currentLoc, project) {
                         currentLoc.deviceAddresses.mapNotNull { project.findDevice(it) }
                     }
                     val spaceGas = remember(currentLoc, project) {
-                        val allInBranch = currentLoc.collectAllDeviceAddresses().mapNotNull { project.findDevice(it) }
-                        allInBranch.flatMap { it.groupAddresses }.distinct().mapNotNull { project.findGroupAddress(it) }
+                        val fromFuncs = currentLoc.collectAllGroupAddresses()
+                        val fromDevs = currentLoc.collectAllDeviceAddresses().mapNotNull { project.findDevice(it) }.flatMap { it.groupAddresses }
+                        (fromFuncs + fromDevs).distinct().mapNotNull { project.findGroupAddress(it) }
                     }
 
                     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1756,7 +1808,11 @@ fun MobileExplorerScreen(
                                         )
                                     }
                                     Text(
-                                        text = "${currentLoc.children.size} spaces • ${totalBranchDevices.size} devs",
+                                        text = buildString {
+                                            if (currentLoc.children.isNotEmpty()) append("${currentLoc.children.size} spaces • ")
+                                            if (totalBranchFunctions.isNotEmpty()) append("${totalBranchFunctions.size} funcs • ")
+                                            append("${totalBranchDevices.size} devs")
+                                        },
                                         style = MaterialTheme.typography.labelSmall,
                                         fontFamily = FontFamily.Monospace,
                                         color = MaterialTheme.colorScheme.primary,
@@ -1785,6 +1841,46 @@ fun MobileExplorerScreen(
                                     MobileBuildingSpaceCard(
                                         space = child,
                                         onClick = { locationPath = locationPath + child },
+                                    )
+                                }
+                            }
+
+                            // Room Functions & Trade Circuits (ETS Functions: lights, blinds, heating, etc.)
+                            if (currentLoc.functions.isNotEmpty()) {
+                                item(key = "space-functions-header") {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = "ROOM FUNCTIONS & CIRCUITS (${currentLoc.functions.size})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        AssistChip(
+                                            onClick = {
+                                                currentLoc.functions.flatMap { it.groupAddresses }.take(40).forEach { ga ->
+                                                    controller.readGroupAddress(ga.toString())
+                                                }
+                                            },
+                                            label = { Text("Read All GAs", fontSize = 10.sp) },
+                                            leadingIcon = { Icon(Icons.Default.Sync, null, modifier = Modifier.size(12.dp)) },
+                                            modifier = Modifier.height(26.dp),
+                                        )
+                                    }
+                                }
+
+                                items(currentLoc.functions, key = { "fn-${it.id}" }) { fn ->
+                                    MobileRoomFunctionCard(
+                                        function = fn,
+                                        project = project,
+                                        state = state,
+                                        controller = controller,
+                                        onInspectGa = { ga ->
+                                            controller.readGroupAddress(ga.address.toString())
+                                        },
                                     )
                                 }
                             }
@@ -1859,7 +1955,7 @@ fun MobileExplorerScreen(
                                 }
                             }
 
-                            if (currentLoc.children.isEmpty() && directDevices.isEmpty()) {
+                            if (currentLoc.children.isEmpty() && directDevices.isEmpty() && currentLoc.functions.isEmpty()) {
                                 item(key = "space-empty") {
                                     OutlinedCard(
                                         shape = RoundedCornerShape(14.dp),
@@ -1875,7 +1971,7 @@ fun MobileExplorerScreen(
                                             Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                                             Text("Empty Space", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                             Text(
-                                                "No child spaces or devices are assigned to ${currentLoc.name} in ETS.",
+                                                "No child spaces, functions, or devices are assigned to ${currentLoc.name} in ETS.",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -3106,6 +3202,7 @@ fun MobileDeviceCard(
 private fun buildVisibleBuildingTree(
     locations: List<BuildingLocation>,
     project: KnxProject,
+    state: AppUiState,
     expandedIds: Set<String>,
 ): List<BuildingTreeNode> {
     val result = mutableListOf<BuildingTreeNode>()
@@ -3127,8 +3224,9 @@ private fun buildVisibleBuildingTree(
                 name = loc.name.ifBlank { "Building" },
                 location = loc,
                 totalDevices = loc.collectAllDeviceAddresses().size,
+                totalFunctions = loc.collectAllFunctions().size,
                 isExpanded = isExpanded,
-                childCount = loc.children.size + loc.deviceAddresses.size,
+                childCount = loc.children.size + loc.deviceAddresses.size + loc.functions.size,
             )
         } else {
             result += BuildingTreeNode.SpaceNode(
@@ -3138,28 +3236,65 @@ private fun buildVisibleBuildingTree(
                 location = loc,
                 totalDevices = loc.collectAllDeviceAddresses().size,
                 directDevicesCount = loc.deviceAddresses.size,
+                directFunctionsCount = loc.functions.size,
                 isExpanded = isExpanded,
-                childCount = loc.children.size + loc.deviceAddresses.size,
+                childCount = loc.children.size + loc.deviceAddresses.size + loc.functions.size,
                 path = currentPath,
             )
         }
 
         if (isExpanded) {
-            // Traverse child spaces first
+            // 1. Traverse child spaces first (Floors, Rooms, Sub-spaces, Distribution Boards)
             for (child in loc.children) {
                 traverseSpace(child, depth + 1, currentPath)
             }
-            // Direct devices assigned to this space
+
+            // 2. Room Functions & Circuits (Lighting, Blinds, HVAC, etc.)
+            for (fn in loc.functions) {
+                val fnNodeId = "$nodeId/fn:${fn.id}"
+                val isFnExpanded = fnNodeId in expandedIds
+                result += BuildingTreeNode.FunctionNode(
+                    id = fnNodeId,
+                    depth = depth + 1,
+                    name = fn.name,
+                    function = fn,
+                    location = loc,
+                    isExpanded = isFnExpanded,
+                    gaCount = fn.groupAddresses.size,
+                    path = currentPath,
+                )
+
+                if (isFnExpanded) {
+                    for (gaAddr in fn.groupAddresses) {
+                        val gaInfo = project.findGroupAddress(gaAddr) ?: GroupAddressInfo(gaAddr, gaAddr.toString())
+                        val gaLeafId = "$fnNodeId/ga:${gaAddr.raw}"
+                        result += BuildingTreeNode.FunctionGaLeafNode(
+                            id = gaLeafId,
+                            depth = depth + 2,
+                            name = gaInfo.name,
+                            function = fn,
+                            ga = gaInfo,
+                            liveEntry = state.groupLiveValues[gaAddr],
+                        )
+                    }
+                }
+            }
+
+            // 3. Direct physical devices assigned to this space
             for (devAddr in loc.deviceAddresses) {
                 val dev = project.findDevice(devAddr)
                 if (dev != null) {
                     val devNodeId = "$nodeId/dev:${dev.address.raw}"
+                    val isOnline = state.deviceStatuses[dev.address]?.reachable
+                    val isProg = dev.address in state.programmingModeDevices
                     result += BuildingTreeNode.DeviceNode(
                         id = devNodeId,
                         depth = depth + 1,
                         name = dev.name,
                         device = dev,
                         path = currentPath,
+                        isOnline = isOnline,
+                        isProgMode = isProg,
                     )
                 }
             }
@@ -3235,7 +3370,7 @@ private fun BuildingTreeBuildingItem(
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "${node.location.children.size} spaces • ${node.totalDevices} devices total",
+                    text = "${node.location.children.size} spaces • ${node.totalFunctions} functions • ${node.totalDevices} devices",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -3270,18 +3405,19 @@ private fun BuildingTreeSpaceItem(
     project: KnxProject,
     controller: AppController,
     onToggle: () -> Unit,
+    onSelectSpace: () -> Unit,
 ) {
     val loc = node.location
     val isPart = loc.type.equals("BuildingPart", ignoreCase = true)
     val isFloor = loc.type.equals("Floor", ignoreCase = true)
     val isRoom = loc.type.equals("Room", ignoreCase = true)
-    val isBoard = loc.type.contains("Distribution", ignoreCase = true) || loc.name.contains("Cabinet", ignoreCase = true) || loc.name.contains("Board", ignoreCase = true)
+    val isBoard = loc.type.contains("Distribution", ignoreCase = true) || loc.name.contains("Cabinet", ignoreCase = true) || loc.name.contains("Board", ignoreCase = true) || loc.name.contains("Panel", ignoreCase = true)
 
     val icon = when {
         isPart -> Icons.Default.Domain
         isFloor -> Icons.Default.Layers
         isRoom -> Icons.Default.MeetingRoom
-        isBoard -> Icons.Default.ElectricalServices
+        isBoard -> Icons.Default.Router
         loc.type.contains("Corridor", ignoreCase = true) || loc.name.contains("Corridor", ignoreCase = true) || loc.name.contains("Hall", ignoreCase = true) ->
             Icons.AutoMirrored.Filled.DirectionsWalk
         loc.type.contains("Stair", ignoreCase = true) || loc.name.contains("Stair", ignoreCase = true) ->
@@ -3356,13 +3492,34 @@ private fun BuildingTreeSpaceItem(
                         modifier = Modifier.weight(1f),
                     )
 
-                    val devCount = if (node.directDevicesCount > 0) node.directDevicesCount else node.totalDevices
+                    val fnCount = loc.functions.size
+                    val devCount = loc.deviceAddresses.size
+                    val countText = when {
+                        fnCount > 0 && devCount > 0 -> "$fnCount fn • $devCount dev"
+                        fnCount > 0 -> "$fnCount fn"
+                        devCount > 0 -> "$devCount dev"
+                        node.totalDevices > 0 -> "${node.totalDevices} dev total"
+                        else -> "${node.location.children.size} spaces"
+                    }
                     Text(
-                        text = "$devCount dev",
+                        text = countText,
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
                     )
+
+                    IconButton(
+                        onClick = onSelectSpace,
+                        modifier = Modifier.size(24.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Launch,
+                            contentDescription = "Drill into space",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
 
                     if (node.childCount > 0) {
                         Icon(
@@ -3406,6 +3563,254 @@ private fun BuildingTreeSpaceItem(
                             leadingIcon = { Icon(Icons.Default.Sync, null, modifier = Modifier.size(11.dp)) },
                             modifier = Modifier.height(24.dp),
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuildingTreeFunctionItem(
+    node: BuildingTreeNode.FunctionNode,
+    onToggle: () -> Unit,
+) {
+    val fn = node.function
+    val indent = (node.depth * 14).dp
+    val icon = when {
+        fn.name.contains("spot", ignoreCase = true) || fn.name.contains("light", ignoreCase = true) || fn.name.contains("licht", ignoreCase = true) || fn.type == "FT-1" -> Icons.Default.Lightbulb
+        fn.name.contains("dimm", ignoreCase = true) || fn.type == "FT-2" -> Icons.Default.Tune
+        fn.name.contains("blind", ignoreCase = true) || fn.name.contains("shutter", ignoreCase = true) || fn.name.contains("jal", ignoreCase = true) || fn.name.contains("window", ignoreCase = true) || fn.type == "FT-3" -> Icons.Default.Window
+        fn.name.contains("temp", ignoreCase = true) || fn.name.contains("heat", ignoreCase = true) || fn.name.contains("klima", ignoreCase = true) || fn.type == "FT-4" -> Icons.Default.Thermostat
+        fn.name.contains("detect", ignoreCase = true) || fn.name.contains("motion", ignoreCase = true) || fn.name.contains("sensor", ignoreCase = true) -> Icons.Default.Sensors
+        fn.name.contains("scene", ignoreCase = true) || fn.name.contains("szene", ignoreCase = true) -> Icons.Default.AutoAwesome
+        else -> Icons.Default.Widgets
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = indent),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "├── ",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (node.isExpanded) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onToggle),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(3.dp),
+                            color = MaterialTheme.colorScheme.secondary,
+                        ) {
+                            Text(
+                                text = "FUNCTION",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondary,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
+                            )
+                        }
+
+                        Text(
+                            text = node.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    Text(
+                        text = "${node.gaCount} group addresses",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Icon(
+                    imageVector = if (node.isExpanded) Icons.Default.ExpandLess else Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuildingTreeGaLeafItem(
+    node: BuildingTreeNode.FunctionGaLeafNode,
+    controller: AppController,
+    onInspect: () -> Unit,
+) {
+    val ga = node.ga
+    val gaText = ga.address.toString()
+    val isSwitch = ga.dpt?.startsWith("1.") == true || ga.name.contains("Schalten", ignoreCase = true) || ga.name.contains("Switch", ignoreCase = true)
+    val indent = (node.depth * 14).dp
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = indent),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "│   └── ",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        OutlinedCard(
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.weight(1f).clickable(onClick = onInspect),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Text(
+                                text = gaText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        }
+
+                        ga.dpt?.let { dpt ->
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                            ) {
+                                Text(
+                                    text = dpt,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = ga.name.ifBlank { "Group Address" },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    // Live Value Badge
+                    val liveVal = node.liveEntry?.valueText
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (liveVal != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Text(
+                            text = liveVal ?: "—",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            color = if (liveVal != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+
+                // Inline Test Controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isSwitch) {
+                        FilledTonalButton(
+                            onClick = { controller.writeGroupSwitch(gaText, false) },
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                            modifier = Modifier.height(22.dp),
+                        ) {
+                            Text("OFF", fontSize = 9.sp)
+                        }
+                        Spacer(Modifier.width(3.dp))
+                        Button(
+                            onClick = { controller.writeGroupSwitch(gaText, true) },
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                            modifier = Modifier.height(22.dp),
+                        ) {
+                            Text("ON", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.width(3.dp))
+                    OutlinedButton(
+                        onClick = { controller.readGroupAddress(gaText) },
+                        shape = RoundedCornerShape(5.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                        modifier = Modifier.height(22.dp),
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(10.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("Read", fontSize = 9.sp)
                     }
                 }
             }
@@ -3538,6 +3943,194 @@ private fun BuildingTreeDeviceItem(
 }
 
 // ---------------------------------------------------------------------------
+// ETS Room Function Card Component
+// ---------------------------------------------------------------------------
+@Composable
+fun MobileRoomFunctionCard(
+    function: BuildingFunction,
+    project: KnxProject,
+    state: AppUiState,
+    controller: AppController,
+    onInspectGa: (GroupAddressInfo) -> Unit,
+) {
+    val icon = when {
+        function.name.contains("spot", ignoreCase = true) || function.name.contains("light", ignoreCase = true) || function.name.contains("licht", ignoreCase = true) || function.type == "FT-1" -> Icons.Default.Lightbulb
+        function.name.contains("dimm", ignoreCase = true) || function.type == "FT-2" -> Icons.Default.Tune
+        function.name.contains("blind", ignoreCase = true) || function.name.contains("shutter", ignoreCase = true) || function.name.contains("jal", ignoreCase = true) || function.name.contains("window", ignoreCase = true) || function.type == "FT-3" -> Icons.Default.Window
+        function.name.contains("temp", ignoreCase = true) || function.name.contains("heat", ignoreCase = true) || function.name.contains("klima", ignoreCase = true) || function.type == "FT-4" -> Icons.Default.Thermostat
+        function.name.contains("detect", ignoreCase = true) || function.name.contains("motion", ignoreCase = true) || function.name.contains("sensor", ignoreCase = true) -> Icons.Default.Sensors
+        function.name.contains("scene", ignoreCase = true) || function.name.contains("szene", ignoreCase = true) -> Icons.Default.AutoAwesome
+        else -> Icons.Default.Widgets
+    }
+
+    OutlinedCard(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
+                    }
+                    Text(
+                        text = function.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        text = "${function.groupAddresses.size} GAs",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+
+            // GAs inside this function
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (gaAddr in function.groupAddresses) {
+                    val ga = project.findGroupAddress(gaAddr) ?: GroupAddressInfo(gaAddr, gaAddr.toString())
+                    val gaText = ga.address.toString()
+                    val liveVal = state.groupLiveValues[ga.address]?.valueText
+                    val isSwitch = ga.dpt?.startsWith("1.") == true || ga.name.contains("Schalten", ignoreCase = true) || ga.name.contains("Switch", ignoreCase = true)
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().clickable { onInspectGa(ga) },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Text(
+                                        text = gaText,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        fontSize = 10.sp,
+                                    )
+                                }
+
+                                ga.dpt?.let { dpt ->
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                    ) {
+                                        Text(
+                                            text = dpt,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 9.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = ga.name.ifBlank { gaText },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (liveVal != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                ) {
+                                    Text(
+                                        text = liveVal ?: "—",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp,
+                                        color = if (liveVal != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    )
+                                }
+
+                                if (isSwitch) {
+                                    FilledTonalButton(
+                                        onClick = { controller.writeGroupSwitch(gaText, false) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(20.dp),
+                                    ) {
+                                        Text("OFF", fontSize = 8.5.sp)
+                                    }
+                                    Button(
+                                        onClick = { controller.writeGroupSwitch(gaText, true) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(20.dp),
+                                    ) {
+                                        Text("ON", fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { controller.readGroupAddress(gaText) },
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(20.dp),
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(9.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ETS Building Space Card Component
 // ---------------------------------------------------------------------------
 @Composable
@@ -3549,6 +4142,8 @@ fun MobileBuildingSpaceCard(
     val totalDevs = remember(space) { space.collectAllDeviceAddresses().size }
     val directDevs = space.deviceAddresses.size
     val subSpaces = space.children.size
+    val directFuncs = space.functions.size
+    val totalFuncs = remember(space) { space.collectAllFunctions().size }
 
     val icon = when {
         space.type.equals("Building", ignoreCase = true) || space.type.equals("BuildingPart", ignoreCase = true) ->
@@ -3558,15 +4153,24 @@ fun MobileBuildingSpaceCard(
         space.type.equals("Room", ignoreCase = true) ->
             Icons.Default.MeetingRoom
         space.type.contains("Distribution", ignoreCase = true) || space.name.contains("Distribution", ignoreCase = true) || space.name.contains("Cabinet", ignoreCase = true) || space.name.contains("Board", ignoreCase = true) || space.name.contains("Panel", ignoreCase = true) ->
-            Icons.Default.ElectricalServices
+            Icons.Default.Router
         space.type.contains("Corridor", ignoreCase = true) || space.name.contains("Corridor", ignoreCase = true) || space.name.contains("Hall", ignoreCase = true) ->
-            Icons.Default.DirectionsWalk
+            Icons.AutoMirrored.Filled.DirectionsWalk
         space.type.contains("Stair", ignoreCase = true) || space.name.contains("Stair", ignoreCase = true) ->
             Icons.Default.Stairs
         space.type.contains("Outdoor", ignoreCase = true) || space.name.contains("Garden", ignoreCase = true) || space.name.contains("Terrace", ignoreCase = true) || space.name.contains("Pool", ignoreCase = true) ->
             Icons.Default.Park
         else ->
             if (subSpaces > 0) Icons.Default.Folder else Icons.Default.MeetingRoom
+    }
+
+    val autoSubtitle = when {
+        subSpaces > 0 && totalFuncs > 0 -> "$subSpaces sub-spaces • $totalFuncs functions • $totalDevs devices"
+        subSpaces > 0 -> "$subSpaces sub-spaces • $totalDevs devices"
+        directFuncs > 0 && directDevs > 0 -> "$directFuncs functions • $directDevs devices"
+        directFuncs > 0 -> "$directFuncs functions (${space.functions.sumOf { it.groupAddresses.size }} GAs)"
+        directDevs > 0 -> "$directDevs devices"
+        else -> "Empty space"
     }
 
     OutlinedCard(

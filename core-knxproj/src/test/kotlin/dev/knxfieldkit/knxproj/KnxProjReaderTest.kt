@@ -178,15 +178,22 @@ class KnxProjReaderTest {
 
     @Test
     fun parseRealWorldUserKnxprojIfPresent() {
-        val userFile = File("C:/Users/stama/.gemini/antigravity/scratch/latest_final.knxproj")
-        if (!userFile.isFile) return
+        val candidates = listOf(
+            File("C:/Users/stama/.gemini/antigravity/scratch/latest_final.knxproj"),
+            File("C:/Users/stama/.gemini/antigravity/scratch/knx-field-kit/latest_final.knxproj"),
+        )
+        val userFile = candidates.firstOrNull { it.isFile } ?: return
         println("Testing user project: ${userFile.length()} bytes")
         val isProtected = KnxProjArchiveReader.isPasswordProtected(userFile)
         println("isProtected: $isProtected")
         val proj = KnxProjParser.openAndParse(userFile, password = null)
         println("Parsed project: name='${proj.name}', devices=${proj.allDevices.size}, GAs=${proj.groupAddresses.size}")
         println("Areas: ${proj.areas.map { "Area ${it.area} '${it.name}': ${it.lines.size} lines" }}")
-        println("Locations: ${proj.locations.map { "${it.type} '${it.name}': ${it.children.size} children, ${it.deviceAddresses.size} devs" }}")
-        println("Effective Group Ranges: ${proj.effectiveGroupRanges.map { "${it.prefixLabel} '${it.name}': ${it.children.size} sub-ranges, ${it.directAddresses.size} direct, total ${it.totalCount}" }}")
+        val allFuncs = proj.locations.flatMap { it.collectAllFunctions() }
+        val allLocGas = proj.locations.flatMap { it.collectAllGroupAddresses() }
+        println("Total parsed functions across all locations: ${allFuncs.size}")
+        println("Total distinct GAs referenced in functions: ${allLocGas.distinct().size}")
+        println("Sample functions: ${allFuncs.take(10).map { "${it.name} (${it.type}, ${it.groupAddresses.size} GAs: ${it.groupAddresses.take(3)})" }}")
+        println("Locations: ${proj.locations.map { "${it.type} '${it.name}': ${it.children.size} children, ${it.functions.size} direct funcs, ${it.collectAllFunctions().size} total funcs, ${it.deviceAddresses.size} devs" }}")
     }
 }

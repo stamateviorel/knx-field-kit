@@ -229,7 +229,7 @@ object KnxProjParser {
         val locations = mutableListOf<BuildingLocation>()
         for (locRoot in zeroDoc.getElementsByTagName("Locations").elements()) {
             for (spaceEl in locRoot.directChildElements("Space")) {
-                locations += parseSpaceRecursive(spaceEl, deviceIdToAddress)
+                locations += parseSpaceRecursive(spaceEl, deviceIdToAddress, gaKeyToAddress)
             }
         }
 
@@ -329,16 +329,38 @@ object KnxProjParser {
     private fun parseSpaceRecursive(
         spaceEl: Element,
         deviceIdToAddress: Map<String, IndividualAddress>,
+        gaKeyToAddress: Map<String, GroupAddress>,
     ): BuildingLocation {
         val devAddrs = spaceEl.directChildElements("DeviceInstanceRef")
             .mapNotNull { deviceIdToAddress[it.getAttribute("RefId").trim()] }
+
+        val functions = spaceEl.directChildElements("Function").map { funcEl ->
+            val funcId = funcEl.getAttribute("Id")
+            val funcName = funcEl.getAttribute("Name").ifBlank { "Function" }
+            val funcType = funcEl.getAttribute("Type").ifBlank { "FT-0" }
+            val gas = funcEl.directChildElements("GroupAddressRef")
+                .mapNotNull { gaRefEl ->
+                    val refId = gaRefEl.getAttribute("RefId").trim()
+                    gaKeyToAddress[refId] ?: gaKeyToAddress[refId.substringAfter('_', "")]
+                }
+            BuildingFunction(
+                id = funcId,
+                name = funcName,
+                type = funcType,
+                groupAddresses = gas,
+            )
+        }
+
         val children = spaceEl.directChildElements("Space")
-            .map { parseSpaceRecursive(it, deviceIdToAddress) }
+            .map { parseSpaceRecursive(it, deviceIdToAddress, gaKeyToAddress) }
+
         return BuildingLocation(
             name = spaceEl.getAttribute("Name"),
             type = spaceEl.getAttribute("Type").ifBlank { "Room" },
             deviceAddresses = devAddrs,
+            functions = functions,
             children = children,
+            id = spaceEl.getAttribute("Id"),
         )
     }
 
