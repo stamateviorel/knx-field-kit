@@ -1,5 +1,9 @@
 package dev.knxfieldkit.mobile
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -88,6 +92,7 @@ fun MobileDiagnosticsScreen(
     var selectedWalkTestRoom by remember { mutableStateOf<String?>(null) }
     var flagIssueDialogGa by remember { mutableStateOf<GroupAddress?>(null) }
     var flagIssueNoteText by remember { mutableStateOf("") }
+    var showTroubleshootSheet by remember { mutableStateOf(false) }
 
     // Selected device from project if found
     val selectedTargetAddress = remember(targetDeviceText) { IndividualAddress.parseOrNull(targetDeviceText) }
@@ -104,6 +109,7 @@ fun MobileDiagnosticsScreen(
         DiagnosticsHeroBanner(
             state = state,
             onRunSiteCheck = { controller.runFullSiteCheck() },
+            onOpenTroubleshoot = { showTroubleshootSheet = true },
             onShareHtml = onShareHtmlReport,
             onShareMarkdown = onShareMarkdownSummary,
         )
@@ -412,6 +418,15 @@ fun MobileDiagnosticsScreen(
             }
         }
     }
+
+    // 1-Click Circuit Diagnostics & Trouble-Shooter Assistant Sheet
+    if (showTroubleshootSheet) {
+        MobileTroubleshootAssistantSheet(
+            state = state,
+            controller = controller,
+            onDismiss = { showTroubleshootSheet = false },
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -422,6 +437,7 @@ fun MobileDiagnosticsScreen(
 private fun DiagnosticsHeroBanner(
     state: AppUiState,
     onRunSiteCheck: () -> Unit,
+    onOpenTroubleshoot: () -> Unit,
     onShareHtml: () -> Unit,
     onShareMarkdown: () -> Unit,
 ) {
@@ -564,7 +580,7 @@ private fun DiagnosticsHeroBanner(
             // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Button(
                     onClick = onRunSiteCheck,
@@ -579,14 +595,30 @@ private fun DiagnosticsHeroBanner(
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(15.dp),
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        text = if (state.isRunningFullSiteCheck) "Auditing Site..." else "Run Full Site Check",
+                        text = if (state.isRunningFullSiteCheck) "Auditing..." else "Audit Site",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                     )
+                }
+
+                OutlinedButton(
+                    onClick = onOpenTroubleshoot,
+                    modifier = Modifier.weight(1.2f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Icon(
+                        Icons.Default.Build,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.secondary,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Diagnose", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 OutlinedButton(
@@ -598,10 +630,10 @@ private fun DiagnosticsHeroBanner(
                     Icon(
                         Icons.Default.Share,
                         contentDescription = null,
-                        modifier = Modifier.size(15.dp),
+                        modifier = Modifier.size(13.dp),
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("Handover", fontSize = 12.sp)
+                    Text("Report", fontSize = 11.sp)
                 }
             }
         }
@@ -836,6 +868,58 @@ private fun LineDiagnosticsContent(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    // Line Coupler Status Card
+                    val couplerAddr = remember(activeArea, activeLineNum) { IndividualAddress(activeArea, activeLineNum, 0) }
+                    val couplerStatus = state.deviceStatuses[couplerAddr]
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Router,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Column {
+                                    Text(
+                                        text = "Coupler $couplerAddr",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        text = if (couplerStatus?.reachable == true) "Online (${couplerStatus.latencyMs}ms • ${couplerStatus.maskVersionHex ?: "Coupler"})"
+                                        else if (couplerStatus != null && !couplerStatus.reachable) "Coupler Unreachable (Check Bus Power)"
+                                        else "Coupler .0 / Router on Medium ${selectedLine?.mediumType ?: "TP1"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 10.sp,
+                                        color = if (couplerStatus?.reachable == true) MaterialTheme.colorScheme.primary
+                                        else if (couplerStatus != null) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { controller.pingIndividualDevice(couplerAddr.toString()) },
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(26.dp),
+                            ) {
+                                Text("Ping .0", fontSize = 10.sp)
+                            }
+                        }
+                    }
 
                     // Line Audit / Scan Action Buttons
                     Row(
@@ -1173,6 +1257,124 @@ private fun LineDiagnosticsContent(
                                             ) {
                                                 Text("Objects", fontSize = 11.sp)
                                                 Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            }
+                                        }
+                                    }
+
+                                    // Device Inline Communication Objects Quick-Test
+                                    if (pDev != null && pDev.comObjects.isNotEmpty()) {
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                text = "COMMUNICATION OBJECTS (${pDev.comObjects.size})",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            Text(
+                                                text = "Test Channel",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                        pDev.comObjects.take(3).forEach { obj ->
+                                            val linkedGa = obj.linkedGroupAddresses.firstOrNull()?.toString()
+                                            val liveVal = linkedGa?.let { gaStr ->
+                                                GroupAddress.parseOrNull(gaStr)?.let { state.groupLiveValues[it]?.valueText }
+                                            }
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Text(
+                                                    text = "#${obj.number}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = obj.name.ifBlank { "Object ${obj.number}" },
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                    Text(
+                                                        text = "${obj.functionText.ifBlank { "Channel" }}${linkedGa?.let { " • $it" } ?: ""}${liveVal?.let { " • $it" } ?: ""}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                }
+                                                if (linkedGa != null) {
+                                                    IconButton(
+                                                        onClick = { controller.readGroupAddress(linkedGa) },
+                                                        modifier = Modifier.size(24.dp),
+                                                    ) {
+                                                        Icon(Icons.Default.Refresh, contentDescription = "Read", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
+                                                    }
+                                                    IconButton(
+                                                        onClick = { controller.writeGroupSwitch(linkedGa, true) },
+                                                        modifier = Modifier.size(24.dp),
+                                                    ) {
+                                                        Icon(Icons.Default.PlayArrow, contentDescription = "ON", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Quick Commissioning for Available Empty Address
+                                    if (pDev == null && addr.device != 0) {
+                                        val progLeds = state.programmingModeDevices
+                                        if (progLeds.isNotEmpty()) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                        modifier = Modifier.weight(1f),
+                                                    ) {
+                                                        Icon(Icons.Default.Lightbulb, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(16.dp))
+                                                        Column {
+                                                            Text("Device in Prog Mode!", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                                            Text("Assign address $addr with 1 tap.", style = MaterialTheme.typography.bodySmall, fontSize = 9.sp, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                                        }
+                                                    }
+                                                    Button(
+                                                        onClick = { controller.commissionProgrammingDevice(addr.toString()) },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = MaterialTheme.colorScheme.tertiary,
+                                                            contentColor = MaterialTheme.colorScheme.onTertiary,
+                                                        ),
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                        modifier = Modifier.height(28.dp),
+                                                    ) {
+                                                        Text("Assign", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1667,6 +1869,10 @@ private fun DeviceInfoContent(
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary,
                                         )
+                                        val linkedGa = obj.linkedGroupAddresses.firstOrNull()?.toString()
+                                        val liveVal = linkedGa?.let { gaStr ->
+                                            GroupAddress.parseOrNull(gaStr)?.let { state.groupLiveValues[it]?.valueText }
+                                        }
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = obj.name.ifBlank { "Object ${obj.number}" },
@@ -1675,13 +1881,27 @@ private fun DeviceInfoContent(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
-                                            if (obj.functionText.isNotBlank()) {
-                                                Text(
-                                                    text = obj.functionText,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    fontSize = 10.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
+                                            Text(
+                                                text = "${obj.functionText.ifBlank { "Channel" }}${linkedGa?.let { " • $it" } ?: ""}${liveVal?.let { " • $it" } ?: ""}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        if (linkedGa != null) {
+                                            IconButton(
+                                                onClick = { controller.readGroupAddress(linkedGa) },
+                                                modifier = Modifier.size(26.dp),
+                                            ) {
+                                                Icon(Icons.Default.Refresh, contentDescription = "Read", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(15.dp))
+                                            }
+                                            IconButton(
+                                                onClick = { controller.writeGroupSwitch(linkedGa, true) },
+                                                modifier = Modifier.size(26.dp),
+                                            ) {
+                                                Icon(Icons.Default.PlayArrow, contentDescription = "ON", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
                                             }
                                         }
                                         Text(
@@ -1982,6 +2202,44 @@ private fun ProgrammingModeContent(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    // Quick pick from unverified project devices
+                    val unverifiedDevices = remember(proj, state.deviceStatuses) {
+                        proj?.allLines?.flatMap { it.devices }
+                            ?.filter { dev -> state.deviceStatuses[dev.address]?.reachable != true }
+                            ?.take(6)
+                            .orEmpty()
+                    }
+                    if (unverifiedDevices.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "QUICK PICK FROM UNCOMMISSIONED DEVICES",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(unverifiedDevices) { dev ->
+                                    val isSelected = newProgAddrText == dev.address.toString()
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            onNewProgAddrChange(dev.address.toString())
+                                            onCheckAddress(dev.address.toString())
+                                        },
+                                        label = {
+                                            Text(
+                                                text = "${dev.address} ${dev.name.take(14)}",
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     OutlinedTextField(
                         value = newProgAddrText,
@@ -2323,36 +2581,131 @@ private fun CommissioningWalkTestContent(
                         }
                     }
 
-                    // Direct Field Controls (ON / OFF / Blink / Dim)
+                    // Direct Field Controls (Tailored for Shutter, Dimmer, or Switch)
+                    val isShutter = remember(gaInfo) {
+                        gaInfo.name.contains("shutter", ignoreCase = true) ||
+                            gaInfo.name.contains("blind", ignoreCase = true) ||
+                            gaInfo.name.contains("rollo", ignoreCase = true) ||
+                            gaInfo.name.contains("jalousie", ignoreCase = true) ||
+                            gaInfo.dpt?.startsWith("1.008") == true
+                    }
+                    val isDimmer = remember(gaInfo) {
+                        gaInfo.name.contains("dimm", ignoreCase = true) ||
+                            gaInfo.dpt?.startsWith("5.001") == true
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Button(
-                            onClick = { controller.writeGroupSwitch(ga.toString(), false) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
+                        // Quick Read Button
+                        IconButton(
+                            onClick = { controller.readGroupAddress(ga.toString()) },
+                            modifier = Modifier.size(32.dp),
                         ) {
-                            Text("OFF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Refresh, contentDescription = "Read", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
                         }
 
-                        Button(
-                            onClick = { controller.writeGroupSwitch(ga.toString(), true) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                        ) {
-                            Text("ON", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        if (isShutter) {
+                            Button(
+                                onClick = { controller.writeGroupSwitch(ga.toString(), false) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                            ) {
+                                Text("▲ UP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { controller.writeGroupDimStep(ga.toString(), false, 0) },
+                                modifier = Modifier.weight(1.1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Text("■ STOP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { controller.writeGroupSwitch(ga.toString(), true) },
+                                modifier = Modifier.weight(1.1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                            ) {
+                                Text("▼ DOWN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (isDimmer) {
+                            Button(
+                                onClick = { controller.writeGroupSwitch(ga.toString(), false) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                            ) {
+                                Text("OFF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { controller.writeGroupPercent(ga.toString(), 50.0) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Text("50%", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { controller.writeGroupSwitch(ga.toString(), true) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                            ) {
+                                Text("ON", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = { controller.writeGroupSwitch(ga.toString(), false) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                            ) {
+                                Text("OFF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { controller.writeGroupSwitch(ga.toString(), true) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                            ) {
+                                Text("ON", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
 
                         OutlinedButton(
@@ -2360,7 +2713,7 @@ private fun CommissioningWalkTestContent(
                                 if (isBlinking) controller.stopWalkTestBlink()
                                 else controller.startWalkTestBlink(ga.toString())
                             },
-                            modifier = Modifier.weight(1.2f),
+                            modifier = Modifier.weight(1.1f),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             colors = if (isBlinking) ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
@@ -2644,6 +2997,297 @@ private fun SiteCommissioningContent(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// 1-Click Circuit Troubleshooter & Diagnostic Assistant (ETS Diagnose-Assistent)
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MobileTroubleshootAssistantSheet(
+    state: AppUiState,
+    controller: AppController,
+    onDismiss: () -> Unit,
+) {
+    val proj = state.project
+    var targetInput by remember { mutableStateOf("") }
+    var isDiagnosing by remember { mutableStateOf(false) }
+    var diagnosisSteps by remember { mutableStateOf<List<Triple<String, String, Boolean?>>>(emptyList()) }
+    var diagnosisVerdict by remember { mutableStateOf<String?>(null) }
+    var isVerdictOk by remember { mutableStateOf(true) }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Column {
+                        Text(
+                            text = "ETS 1-Click Circuit Troubleshooter",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "Automated 4-point health verification for any GA or Device",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            OutlinedTextField(
+                value = targetInput,
+                onValueChange = { targetInput = it },
+                label = { Text("Group Address (1/1/10) or Device (1.1.2)") },
+                placeholder = { Text("Enter GA or Individual Address to test") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+            )
+
+            // Quick Suggestions from Project GAs
+            val sampleGas = remember(proj) { proj?.groupAddresses?.values?.take(4).orEmpty() }
+            if (sampleGas.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(sampleGas) { ga ->
+                        FilterChip(
+                            selected = targetInput == ga.address.toString(),
+                            onClick = { targetInput = ga.address.toString() },
+                            label = { Text("${ga.address} ${ga.name.take(12)}", fontSize = 11.sp) },
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                    }
+                }
+            }
+
+            Button(
+                onClick = {
+                    val input = targetInput.trim()
+                    if (input.isBlank()) return@Button
+                    isDiagnosing = true
+                    diagnosisSteps = emptyList()
+                    diagnosisVerdict = null
+
+                    coroutineScope.launch {
+                        val steps = mutableListOf<Triple<String, String, Boolean?>>()
+                        val parsedGa = GroupAddress.parseOrNull(input)
+                        val parsedIa = IndividualAddress.parseOrNull(input)
+
+                        if (parsedGa != null) {
+                            val gaInfo = proj?.findGroupAddress(parsedGa)
+                            val linkedDevs = gaInfo?.linkedObjects?.mapNotNull { it.deviceAddress }?.distinct().orEmpty()
+                            val area = linkedDevs.firstOrNull()?.area ?: 1
+                            val line = linkedDevs.firstOrNull()?.line ?: 1
+                            val coupler = IndividualAddress(area, line, 0)
+
+                            // Step 1: Coupler Check
+                            steps.add(Triple("1. Line Coupler", "Pinging line coupler $coupler...", null))
+                            diagnosisSteps = steps.toList()
+                            controller.pingIndividualDevice(coupler.toString())
+                            kotlinx.coroutines.delay(400)
+                            val couplerOk = state.deviceStatuses[coupler]?.reachable == true
+                            steps[0] = Triple("1. Line Coupler $coupler", if (couplerOk) "ONLINE (${state.deviceStatuses[coupler]?.latencyMs}ms)" else "UNREACHABLE (Timeout)", couplerOk)
+                            diagnosisSteps = steps.toList()
+
+                            // Step 2: Actuator / Devices Ping
+                            if (linkedDevs.isNotEmpty()) {
+                                steps.add(Triple("2. Controlling Devices", "Verifying ${linkedDevs.size} linked hardware units...", null))
+                                diagnosisSteps = steps.toList()
+                                var allDevsOk = true
+                                for (dev in linkedDevs) {
+                                    controller.pingIndividualDevice(dev.toString())
+                                    kotlinx.coroutines.delay(300)
+                                    val devOk = state.deviceStatuses[dev]?.reachable == true
+                                    if (!devOk) allDevsOk = false
+                                }
+                                val onlineCount = linkedDevs.count { state.deviceStatuses[it]?.reachable == true }
+                                steps[1] = Triple("2. Linked Hardware", "$onlineCount/${linkedDevs.size} devices responding online", allDevsOk)
+                                diagnosisSteps = steps.toList()
+                            } else {
+                                steps.add(Triple("2. Linked Hardware", "No device links found in project XML", false))
+                                diagnosisSteps = steps.toList()
+                            }
+
+                            // Step 3: Bus Group Value Read
+                            steps.add(Triple("3. Live Group Value", "Sending A_GroupValue_Read to $parsedGa...", null))
+                            diagnosisSteps = steps.toList()
+                            controller.readGroupAddress(input)
+                            kotlinx.coroutines.delay(500)
+                            val liveVal = state.groupLiveValues[parsedGa]?.valueText
+                            val valOk = liveVal != null
+                            steps[2] = Triple("3. Group Value Response", if (valOk) "Received reply: '$liveVal'" else "No device replied to GroupRead", valOk)
+                            diagnosisSteps = steps.toList()
+
+                            // Verdict
+                            isVerdictOk = couplerOk && (valOk || linkedDevs.any { state.deviceStatuses[it]?.reachable == true })
+                            diagnosisVerdict = if (isVerdictOk) {
+                                "✓ Circuit communication is verified. Hardware devices are online and acknowledging telegrams on the bus."
+                            } else {
+                                "⚠️ Fault detected on circuit $input. Check physical bus cable connection, line power, and coupler routing."
+                            }
+                        } else if (parsedIa != null) {
+                            val coupler = IndividualAddress(parsedIa.area, parsedIa.line, 0)
+                            // Step 1: Coupler Check
+                            steps.add(Triple("1. Line Coupler", "Pinging line coupler $coupler...", null))
+                            diagnosisSteps = steps.toList()
+                            controller.pingIndividualDevice(coupler.toString())
+                            kotlinx.coroutines.delay(400)
+                            val couplerOk = state.deviceStatuses[coupler]?.reachable == true
+                            steps[0] = Triple("1. Line Coupler $coupler", if (couplerOk) "ONLINE" else "TIMEOUT", couplerOk)
+                            diagnosisSteps = steps.toList()
+
+                            // Step 2: Device Ping
+                            steps.add(Triple("2. Physical Ping (DD0)", "Pinging device $parsedIa...", null))
+                            diagnosisSteps = steps.toList()
+                            controller.pingIndividualDevice(input)
+                            kotlinx.coroutines.delay(400)
+                            val devOk = state.deviceStatuses[parsedIa]?.reachable == true
+                            val lat = state.deviceStatuses[parsedIa]?.latencyMs
+                            steps[1] = Triple("2. Device Response", if (devOk) "ONLINE (${lat}ms)" else "UNREACHABLE", devOk)
+                            diagnosisSteps = steps.toList()
+
+                            // Step 3: BCU Info
+                            steps.add(Triple("3. BCU & Mask Inspection", "Reading mask and load state...", null))
+                            diagnosisSteps = steps.toList()
+                            controller.inspectDeviceDiagnostics(input)
+                            kotlinx.coroutines.delay(500)
+                            val diag = state.deviceDiagnostics
+                            val bcuOk = diag?.reachable == true
+                            steps[2] = Triple("3. BCU & Mask", if (bcuOk) "Mask ${diag?.maskVersionHex ?: "-"}, Run: ${diag?.runState ?: "Normal"}" else "Could not read BCU", bcuOk)
+                            diagnosisSteps = steps.toList()
+
+                            isVerdictOk = devOk
+                            diagnosisVerdict = if (devOk) {
+                                "✓ Device $input is healthy and operating normally on Line ${parsedIa.area}.${parsedIa.line}."
+                            } else {
+                                "⚠️ Device $input is unreachable. Verify physical connection to line ${parsedIa.area}.${parsedIa.line} and bus power."
+                            }
+                        } else {
+                            diagnosisVerdict = "Invalid target format. Enter a Group Address (e.g. 1/1/10) or Individual Address (e.g. 1.1.2)."
+                            isVerdictOk = false
+                        }
+                        isDiagnosing = false
+                    }
+                },
+                enabled = !isDiagnosing && targetInput.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (isDiagnosing) "Running 4-Point Health Diagnosis..." else "Run 4-Point Health Diagnosis", fontWeight = FontWeight.Bold)
+            }
+
+            if (isDiagnosing) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            // Diagnostic Steps Progress List
+            if (diagnosisSteps.isNotEmpty()) {
+                ElevatedCard(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "DIAGNOSTIC VERIFICATION SEQUENCE",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        diagnosisSteps.forEach { (title, detail, status) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                when (status) {
+                                    true -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                    false -> Icon(Icons.Default.Cancel, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                    null -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(detail, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Final Diagnostic Verdict Card
+            diagnosisVerdict?.let { verdict ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isVerdictOk) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, if (isVerdictOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (isVerdictOk) Icons.Default.VerifiedUser else Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = if (isVerdictOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Text(
+                            text = verdict,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 18.sp,
+                        )
                     }
                 }
             }
