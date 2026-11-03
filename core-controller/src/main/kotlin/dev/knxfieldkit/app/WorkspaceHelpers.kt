@@ -116,6 +116,8 @@ object HtmlReportExporter {
         siteCheck: SiteCheckReport?,
         deviceStatuses: Map<IndividualAddress, DevicePingResult>,
         groupLiveValues: Map<GroupAddress, GroupValueEntry>,
+        walkTestVerified: Set<GroupAddress> = emptySet(),
+        walkTestFlagged: Map<GroupAddress, String> = emptyMap(),
     ) {
         val html = buildString {
             append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>KNX Field Kit Commissioning Report</title><style>")
@@ -160,7 +162,25 @@ object HtmlReportExporter {
                 val lv = groupLiveValues[ga.address]?.valueText ?: "-"
                 append("<tr><td><code>${ga.address}</code></td><td>${esc(ga.name)}</td><td><code>${esc(ga.dpt ?: "raw")}</code></td><td>${ga.linkedObjects.size}</td><td><code>${esc(lv)}</code></td></tr>")
             }
-            append("</table></body></html>")
+            append("</table>")
+            if (walkTestVerified.isNotEmpty() || walkTestFlagged.isNotEmpty()) {
+                append("<h2>Functional Walk-Test &amp; Commissioning Sign-Off</h2>")
+                append("<p><strong>Verified Channels:</strong> ${walkTestVerified.size} &bull; <strong>Flagged Issues:</strong> ${walkTestFlagged.size}</p>")
+                append("<table><tr><th>Group Address</th><th>Name</th><th>Sign-Off Status</th><th>Inspection Note</th></tr>")
+                for (ga in project?.groupAddresses?.values?.sortedBy { it.address }.orEmpty()) {
+                    if (ga.address in walkTestVerified || ga.address in walkTestFlagged) {
+                        val status = if (ga.address in walkTestVerified) "<span class=\"ok\">VERIFIED OK</span>" else "<span class=\"err\">ISSUE FLAGGED</span>"
+                        val note = walkTestFlagged[ga.address] ?: "-"
+                        append("<tr><td><code>${ga.address}</code></td><td>${esc(ga.name)}</td><td>$status</td><td>${esc(note)}</td></tr>")
+                    }
+                }
+                append("</table>")
+            }
+            append("<div style=\"margin-top: 40px; padding-top: 20px; border-top: 1px solid #334155; display: flex; justify-content: space-between;\">")
+            append("<div><p>___________________________________<br>Lead KNX Commissioning Engineer</p></div>")
+            append("<div><p>___________________________________<br>Client / Building Owner Acceptance</p></div>")
+            append("</div>")
+            append("</body></html>")
         }
         targetFile.parentFile?.mkdirs()
         targetFile.writeText(html, StandardCharsets.UTF_8)

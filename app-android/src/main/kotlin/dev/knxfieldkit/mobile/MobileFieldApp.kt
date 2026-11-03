@@ -46,7 +46,7 @@ fun MobileFieldApp(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(MobileColors.BgCanvas),
+                .background(MaterialTheme.colorScheme.background),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Official Material 3 Top App Bar
@@ -166,7 +166,7 @@ fun MobileFieldApp(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MobileColors.AccentAmber.copy(alpha = 0.2f))
+                            .background(MaterialTheme.colorScheme.tertiaryContainer)
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -175,10 +175,19 @@ fun MobileFieldApp(
                             text = "WALK-TEST BLINKING ${state.walkTestGroupAddress} (#${state.walkTestStepCount})",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MobileColors.AccentAmber,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
                         )
-                        MobileActionPill("STOP", MobileColors.AccentRed) {
-                            controller.stopWalkTestBlink()
+                        Button(
+                            onClick = { controller.stopWalkTestBlink() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Text("STOP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -213,11 +222,11 @@ fun MobileFieldApp(
                 }
 
                 // Compact Live Status Strip
-                HorizontalDivider(color = MobileColors.BorderSubtle)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MobileColors.BgTopBar)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
                         .padding(horizontal = 12.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -225,13 +234,13 @@ fun MobileFieldApp(
                     Icon(
                         Icons.Default.Bolt,
                         contentDescription = null,
-                        tint = MobileColors.AccentEmerald,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(13.dp),
                     )
                     Text(
                         text = state.statusMessage,
                         fontSize = 10.sp,
-                        color = MobileColors.TextSecondary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
@@ -254,7 +263,7 @@ fun MobileFieldApp(
                         Triple(AppTab.PROJECT, "Explorer", Icons.Default.AccountTree),
                         Triple(AppTab.MONITOR, "Monitor", Icons.Default.GraphicEq),
                         Triple(AppTab.SENDER, "Send", Icons.Default.Tune),
-                        Triple(AppTab.DIAGNOSTICS, "Field Tests", Icons.Default.VerifiedUser),
+                        Triple(AppTab.DIAGNOSTICS, "Diagnostics", Icons.Default.VerifiedUser),
                     )
                     navItems.forEach { (tab, label, icon) ->
                         val selected = state.activeTab == tab

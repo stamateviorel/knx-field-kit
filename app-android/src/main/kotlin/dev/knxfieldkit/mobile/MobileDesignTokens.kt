@@ -280,8 +280,8 @@ fun MobileComFlagsStrip(flags: ComObjectFlags, modifier: Modifier = Modifier) {
 fun MobileMetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
     Surface(
         shape = RoundedCornerShape(10.dp),
-        color = MobileColors.BgCard,
-        border = BorderStroke(1.dp, MobileColors.BorderSubtle),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier,
     ) {
         Column(
@@ -292,7 +292,7 @@ fun MobileMetricTile(label: String, value: String, accent: Color, modifier: Modi
                 text = label,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MobileColors.TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

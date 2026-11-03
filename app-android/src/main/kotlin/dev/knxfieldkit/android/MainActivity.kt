@@ -156,6 +156,7 @@ class MainActivity : ComponentActivity() {
                 "LINE", "LINE_DIAGNOSTICS", "LINESCAN" -> activeDiagTab.value = EtsDiagnosticsTab.LINE_DIAGNOSTICS
                 "DEVICE", "DEVICE_INFO", "INFO" -> activeDiagTab.value = EtsDiagnosticsTab.DEVICE_INFO
                 "PROG", "PROG_MODE", "PROGRAMMING" -> activeDiagTab.value = EtsDiagnosticsTab.PROGRAMMING_MODE
+                "WALK", "WALK_TEST", "GEHTEST" -> activeDiagTab.value = EtsDiagnosticsTab.WALK_TEST
                 "SITE", "REPORT", "COMMISSIONING" -> activeDiagTab.value = EtsDiagnosticsTab.SITE_COMMISSIONING
             }
         }

@@ -352,7 +352,7 @@ class AppControllerTest {
             diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.LINE_DIAGNOSTICS
             delay(100L)
             renderMobile("knx-android-diagnostics.png")
-            renderMobile("phone-ets-diagnostics-line.png")
+            renderMobile("phone-ets-diagnostics-matrix.png")
 
             // 5b. ETS Device Info & BCU Properties Readout
             controller.inspectDeviceDiagnostics("1.1.20")
@@ -366,7 +366,18 @@ class AppControllerTest {
             delay(100L)
             renderMobile("phone-ets-diagnostics-progmode.png")
 
-            // 5d. ETS Site Commissioning & Handover Report
+            // 5d. ETS Commissioning Walk-Test & Channel Sign-Off
+            val ga111 = GroupAddress.parseOrNull("1/1/1")!!
+            val ga122 = GroupAddress.parseOrNull("1/2/2")!!
+            val ga113 = GroupAddress.parseOrNull("1/1/3")!!
+            controller.toggleChannelWalkTestVerified(ga111)
+            controller.toggleChannelWalkTestVerified(ga122)
+            controller.flagChannelWalkTestIssue(ga113, "Audible click but circuit remaining open")
+            diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.WALK_TEST
+            delay(100L)
+            renderMobile("phone-ets-diagnostics-walktest.png")
+
+            // 5e. ETS Site Commissioning & Handover Report
             diagTabState.value = dev.knxfieldkit.mobile.EtsDiagnosticsTab.SITE_COMMISSIONING
             delay(100L)
             renderMobile("phone-ets-diagnostics-report.png")

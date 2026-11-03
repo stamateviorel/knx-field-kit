@@ -135,6 +135,8 @@ data class AppUiState(
     val walkTestActive: Boolean = false,
     val walkTestGroupAddress: GroupAddress? = null,
     val walkTestStepCount: Int = 0,
+    val walkTestVerifiedChannels: Set<GroupAddress> = emptySet(),
+    val walkTestFlaggedChannels: Map<GroupAddress, String> = emptyMap(),
     val pingResults: List<DevicePingResult> = emptyList(),
     val isPinging: Boolean = false,
     val lineAuditReport: LineAuditReport? = null,
@@ -823,6 +825,35 @@ class AppController(
         }
     }
 
+    fun toggleChannelWalkTestVerified(ga: GroupAddress) {
+        _uiState.update { st ->
+            val nowVerified = if (ga in st.walkTestVerifiedChannels) {
+                st.walkTestVerifiedChannels - ga
+            } else {
+                st.walkTestVerifiedChannels + ga
+            }
+            st.copy(
+                walkTestVerifiedChannels = nowVerified,
+                walkTestFlaggedChannels = st.walkTestFlaggedChannels - ga,
+                statusMessage = if (ga in nowVerified) "Channel $ga marked Verified OK" else "Channel $ga unchecked",
+            )
+        }
+    }
+
+    fun flagChannelWalkTestIssue(ga: GroupAddress, note: String) {
+        _uiState.update { st ->
+            st.copy(
+                walkTestFlaggedChannels = st.walkTestFlaggedChannels + (ga to note),
+                walkTestVerifiedChannels = st.walkTestVerifiedChannels - ga,
+                statusMessage = "Channel $ga flagged: $note",
+            )
+        }
+    }
+
+    fun clearWalkTestChannels() {
+        _uiState.update { it.copy(walkTestVerifiedChannels = emptySet(), walkTestFlaggedChannels = emptyMap()) }
+    }
+
     fun writeGroupRawHex(addressText: String, hexPayload: String, compact6Bit: Boolean) {
         val bytes = runCatching { HexBytes.fromHex(hexPayload) }.getOrElse {
             setStatus("Invalid hex payload: ${it.message}")
@@ -1134,6 +1165,8 @@ class AppController(
                     siteCheck = snap.siteCheckReport,
                     deviceStatuses = snap.deviceStatuses,
                     groupLiveValues = snap.groupLiveValues,
+                    walkTestVerified = snap.walkTestVerifiedChannels,
+                    walkTestFlagged = snap.walkTestFlaggedChannels,
                 )
             }
             setStatus("Exported HTML Commissioning Report to ${targetFile.name}")

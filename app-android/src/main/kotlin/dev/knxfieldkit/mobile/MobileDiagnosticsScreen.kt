@@ -1,5 +1,6 @@
 package dev.knxfieldkit.mobile
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,16 +35,18 @@ import dev.knxfieldkit.model.*
 /**
  * Authentic ETS Diagnostics & Commissioning Suite for KNX Field Technicians.
  *
- * Implements the 4 core ETS diagnostics workbenches:
- * 1. Line Diagnostics (Linien-Scan & Topologie-Prüfung)
- * 2. Device Info & BCU (ETS Geräteinfo & DD0/BCU)
+ * Implements the 5 core ETS diagnostics workbenches:
+ * 1. Line Scan & 16x16 Visual Address Matrix (Linien-Scan & Adress-Matrix)
+ * 2. Device Info & BCU Properties (ETS Geräteinfo & DD0/BCU)
  * 3. Programming Mode & Address Commissioning (Physikalische Adressen)
- * 4. Site Commissioning & Handover Report (Inbetriebnahme-Abnahme)
+ * 4. Commissioning Walk-Test & Channel Sign-Off (Inbetriebnahme-Gehtest)
+ * 5. Site Commissioning & Handover Report (Inbetriebnahme-Abnahme)
  */
 enum class EtsDiagnosticsTab(val label: String, val icon: ImageVector) {
     LINE_DIAGNOSTICS("Line Scan", Icons.Default.Route),
     DEVICE_INFO("Device Info", Icons.Default.Memory),
     PROGRAMMING_MODE("Prog Mode", Icons.Default.Lightbulb),
+    WALK_TEST("Walk Test", Icons.AutoMirrored.Filled.DirectionsWalk),
     SITE_COMMISSIONING("Site Report", Icons.AutoMirrored.Filled.FactCheck),
 }
 
@@ -67,6 +70,8 @@ fun MobileDiagnosticsScreen(
     var customAreaText by remember { mutableStateOf("1") }
     var customLineText by remember { mutableStateOf("1") }
     var lineAuditFilter by remember { mutableStateOf("ALL") } // "ALL", "ONLINE", "FAULTS"
+    var lineViewMode by remember { mutableStateOf("MATRIX") } // "MATRIX" or "LIST"
+    var selectedMatrixAddress by remember { mutableStateOf<IndividualAddress?>(null) }
 
     // Device Info state
     var targetDeviceText by remember(state.selectedDeviceAddress) {
@@ -78,6 +83,11 @@ fun MobileDiagnosticsScreen(
     // Programming Mode state
     var newProgAddrText by remember { mutableStateOf("") }
     var addressCheckStatus by remember { mutableStateOf<String?>(null) }
+
+    // Walk Test state
+    var selectedWalkTestRoom by remember { mutableStateOf<String?>(null) }
+    var flagIssueDialogGa by remember { mutableStateOf<GroupAddress?>(null) }
+    var flagIssueNoteText by remember { mutableStateOf("") }
 
     // Selected device from project if found
     val selectedTargetAddress = remember(targetDeviceText) { IndividualAddress.parseOrNull(targetDeviceText) }
@@ -98,11 +108,13 @@ fun MobileDiagnosticsScreen(
             onShareMarkdown = onShareMarkdownSummary,
         )
 
-        // Google Material 3 Diagnostics Suite Tabs
-        PrimaryTabRow(
+        // Google Material 3 Scrollable Diagnostics Suite Tabs
+        PrimaryScrollableTabRow(
             selectedTabIndex = activeTab.ordinal,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.primary,
+            edgePadding = 8.dp,
+            divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
         ) {
             EtsDiagnosticsTab.entries.forEach { tab ->
                 val selected = activeTab == tab
@@ -144,8 +156,12 @@ fun MobileDiagnosticsScreen(
                         onCustomAreaChange = { customAreaText = it },
                         customLineText = customLineText,
                         onCustomLineChange = { customLineText = it },
+                        lineViewMode = lineViewMode,
+                        onViewModeChange = { lineViewMode = it },
                         lineAuditFilter = lineAuditFilter,
                         onFilterChange = { lineAuditFilter = it },
+                        selectedMatrixAddress = selectedMatrixAddress,
+                        onSelectMatrixAddress = { selectedMatrixAddress = it },
                         onInspectDevice = { addr ->
                             targetDeviceText = addr.toString()
                             activeTab = EtsDiagnosticsTab.DEVICE_INFO
@@ -191,6 +207,19 @@ fun MobileDiagnosticsScreen(
                     )
                 }
 
+                EtsDiagnosticsTab.WALK_TEST -> {
+                    CommissioningWalkTestContent(
+                        state = state,
+                        controller = controller,
+                        selectedRoom = selectedWalkTestRoom,
+                        onSelectRoom = { selectedWalkTestRoom = it },
+                        onFlagIssue = { ga ->
+                            flagIssueDialogGa = ga
+                            flagIssueNoteText = state.walkTestFlaggedChannels[ga] ?: ""
+                        },
+                    )
+                }
+
                 EtsDiagnosticsTab.SITE_COMMISSIONING -> {
                     SiteCommissioningContent(
                         state = state,
@@ -206,6 +235,47 @@ fun MobileDiagnosticsScreen(
                 }
             }
         }
+    }
+
+    // Flag Issue Dialog for Walk-Test
+    flagIssueDialogGa?.let { ga ->
+        AlertDialog(
+            onDismissRequest = { flagIssueDialogGa = null },
+            title = { Text("Flag Commissioning Issue: $ga") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter a diagnostic defect note for channel $ga (e.g. 'Actuator clicking but light remains off' or 'Inverted polarity').",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = flagIssueNoteText,
+                        onValueChange = { flagIssueNoteText = it },
+                        label = { Text("Defect Note") },
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        controller.flagChannelWalkTestIssue(ga, flagIssueNoteText.ifBlank { "Defect reported during walk-test" })
+                        flagIssueDialogGa = null
+                    },
+                ) {
+                    Text("Save Note")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { flagIssueDialogGa = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     // Searchable Device Picker Bottom Sheet
@@ -574,7 +644,7 @@ private fun MetricChip(
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1: Line Diagnostics (ETS Linien-Scan & Audit)
+// Tab 1: Line Diagnostics & 16x16 Visual Address Matrix
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -590,8 +660,12 @@ private fun LineDiagnosticsContent(
     onCustomAreaChange: (String) -> Unit,
     customLineText: String,
     onCustomLineChange: (String) -> Unit,
+    lineViewMode: String,
+    onViewModeChange: (String) -> Unit,
     lineAuditFilter: String,
     onFilterChange: (String) -> Unit,
+    selectedMatrixAddress: IndividualAddress?,
+    onSelectMatrixAddress: (IndividualAddress?) -> Unit,
     onInspectDevice: (IndividualAddress) -> Unit,
 ) {
     val proj = state.project
@@ -673,7 +747,10 @@ private fun LineDiagnosticsContent(
                             val isSelected = line.id == selectedLineId
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { onSelectLineId(line.id) },
+                                onClick = {
+                                    onSelectLineId(line.id)
+                                    onSelectMatrixAddress(null)
+                                },
                                 label = {
                                     Text(
                                         text = "${line.id} ${line.name.take(16)} (${line.devices.size})",
@@ -692,7 +769,7 @@ private fun LineDiagnosticsContent(
             }
         }
 
-        // Line Overview & Diagnostic Action Card
+        // Line Specifications & Commissioning Action Card
         item {
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -752,7 +829,7 @@ private fun LineDiagnosticsContent(
 
                     Text(
                         text = if (selectedLine != null) {
-                            "${selectedLine.devices.size} devices configured in ETS project on this line. Coupler: $activeArea.$activeLineNum.0"
+                            "${selectedLine.devices.size} devices in project on this line. Coupler: $activeArea.$activeLineNum.0"
                         } else {
                             "Scan individual addresses on this physical line to detect online devices."
                         },
@@ -836,71 +913,270 @@ private fun LineDiagnosticsContent(
             }
         }
 
-        // Subnet Scan Discovered Devices (Sweep results)
-        if (state.subnetScanResults.isNotEmpty()) {
+        // View Mode Switcher: 16x16 Matrix Grid vs Device List
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (lineViewMode == "MATRIX") "16×16 ADDRESS MATRIX (0..255)" else "CONFIGURED DEVICES LIST",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FilterChip(
+                        selected = lineViewMode == "MATRIX",
+                        onClick = { onViewModeChange("MATRIX") },
+                        label = { Text("Matrix Grid", fontSize = 11.sp) },
+                        leadingIcon = { Icon(Icons.Default.Apps, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(30.dp),
+                    )
+                    FilterChip(
+                        selected = lineViewMode == "LIST",
+                        onClick = { onViewModeChange("LIST") },
+                        label = { Text("List View", fontSize = 11.sp) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(30.dp),
+                    )
+                }
+            }
+        }
+
+        // VIEW MODE A: Official ETS 16x16 Address Matrix Grid
+        if (lineViewMode == "MATRIX") {
             item {
-                OutlinedCard(
+                ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.outlinedCardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
                     ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
+                        // Matrix Color Legend
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = "DISCOVERED DEVICES ON WIRE (${state.subnetScanResults.size})",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            MatrixLegendItem(color = MaterialTheme.colorScheme.secondary, label = "Coupler .0")
+                            MatrixLegendItem(color = MaterialTheme.colorScheme.primary, label = "Online")
+                            MatrixLegendItem(color = MaterialTheme.colorScheme.error, label = "Fault")
+                            MatrixLegendItem(color = MaterialTheme.colorScheme.tertiary, label = "Uncommissioned")
+                            MatrixLegendItem(color = MaterialTheme.colorScheme.surfaceContainerHigh, label = "Empty")
                         }
-                        state.subnetScanResults.forEach { found ->
-                            val matchedProj = proj?.findDevice(found.address)
-                            Row(
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        // 16x16 Interactive Address Matrix
+                        val totalCells = 256
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            for (row in 0 until 16) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    for (col in 0 until 16) {
+                                        val devNum = row * 16 + col
+                                        val addr = IndividualAddress(activeArea, activeLineNum, devNum)
+                                        val isSelected = selectedMatrixAddress == addr
+
+                                        val isCoupler = devNum == 0
+                                        val projDev = proj?.findDevice(addr)
+                                        val status = state.deviceStatuses[addr]
+                                        val isProgLed = addr in state.programmingModeDevices
+                                        val isDiscovered = state.subnetScanResults.any { it.address == addr }
+
+                                        val cellColor = when {
+                                            isProgLed -> MaterialTheme.colorScheme.tertiary
+                                            isCoupler -> MaterialTheme.colorScheme.secondaryContainer
+                                            status?.reachable == true -> MaterialTheme.colorScheme.primary
+                                            status != null && !status.reachable -> MaterialTheme.colorScheme.error
+                                            isDiscovered && projDev == null -> MaterialTheme.colorScheme.tertiary
+                                            projDev != null -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                        }
+
+                                        val contentColor = when {
+                                            isProgLed -> MaterialTheme.colorScheme.onTertiary
+                                            isCoupler -> MaterialTheme.colorScheme.onSecondaryContainer
+                                            status?.reachable == true -> MaterialTheme.colorScheme.onPrimary
+                                            status != null && !status.reachable -> MaterialTheme.colorScheme.onError
+                                            isDiscovered && projDev == null -> MaterialTheme.colorScheme.onTertiary
+                                            projDev != null -> MaterialTheme.colorScheme.onSurface
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .aspectRatio(1f)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(cellColor)
+                                                .border(
+                                                    width = if (isSelected) 2.dp else 0.5.dp,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                                    shape = RoundedCornerShape(3.dp),
+                                                )
+                                                .clickable { onSelectMatrixAddress(addr) },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                text = if (devNum == 0) "C" else "$devNum",
+                                                fontSize = 7.sp,
+                                                fontWeight = if (projDev != null || isCoupler) FontWeight.Bold else FontWeight.Normal,
+                                                color = contentColor,
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Selected Matrix Address Inspector Drawer
+                        selectedMatrixAddress?.let { addr ->
+                            val pDev = proj?.findDevice(addr)
+                            val st = state.deviceStatuses[addr]
+                            val isLed = addr in state.programmingModeDevices
+                            val loc = proj?.findDeviceLocationPath(addr) ?: "Unplaced"
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .clickable { onInspectDevice(found.address) }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    .padding(top = 4.dp),
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
-                                    Text(
-                                        text = found.address.toString(),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                            ) {
+                                                Text(
+                                                    text = addr.toString(),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                )
+                                            }
+                                            Text(
+                                                text = if (addr.device == 0) "Line Coupler / Router"
+                                                else pDev?.name ?: "Uncommissioned Address",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = when {
+                                                isLed -> MaterialTheme.colorScheme.tertiary
+                                                st?.reachable == true -> MaterialTheme.colorScheme.primary
+                                                st != null && !st.reachable -> MaterialTheme.colorScheme.error
+                                                pDev != null -> MaterialTheme.colorScheme.secondary
+                                                else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                            },
+                                        ) {
+                                            Text(
+                                                text = when {
+                                                    isLed -> "PROG LED ON"
+                                                    st?.reachable == true -> "ONLINE ${st.latencyMs}ms"
+                                                    st != null && !st.reachable -> "OFFLINE"
+                                                    pDev != null -> "IN PROJECT"
+                                                    else -> "AVAILABLE"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = when {
+                                                    isLed -> MaterialTheme.colorScheme.onTertiary
+                                                    st?.reachable == true -> MaterialTheme.colorScheme.onPrimary
+                                                    st != null && !st.reachable -> MaterialTheme.colorScheme.onError
+                                                    pDev != null -> MaterialTheme.colorScheme.onSecondary
+                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            )
+                                        }
+                                    }
+
+                                    if (pDev != null) {
+                                        Text(
+                                            text = "${pDev.productName.ifBlank { pDev.manufacturerName }} • $loc (${pDev.comObjects.size} objs)",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+
+                                    // Action buttons for selected address
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Button(
+                                            onClick = { controller.pingIndividualDevice(addr.toString()) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                        ) {
+                                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Ping", fontSize = 11.sp)
+                                        }
+                                        OutlinedButton(
+                                            onClick = { onInspectDevice(addr) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                        ) {
+                                            Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Info", fontSize = 11.sp)
+                                        }
+                                        pDev?.let { dev ->
+                                            OutlinedButton(
+                                                onClick = {
+                                                    controller.openDeviceObjectsInExplorer(dev.address)
+                                                    controller.selectTab(AppTab.PROJECT)
+                                                },
+                                                modifier = Modifier.weight(1.2f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                            ) {
+                                                Text("Objects", fontSize = 11.sp)
+                                                Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            }
+                                        }
+                                    }
                                 }
-                                Text(
-                                    text = matchedProj?.name ?: "Uncommissioned Device",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    text = "Mask ${found.maskVersionHex ?: "DD0"}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
                             }
                         }
                     }
@@ -908,127 +1184,130 @@ private fun LineDiagnosticsContent(
             }
         }
 
-        // Line Audit Results Header & Filter Chips
-        if (auditEntries.isNotEmpty()) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        state.lineAuditReport?.let { rep ->
-                            Text(
-                                text = "${rep.onlineCount} Online • ${rep.unreachableCount} Unreachable",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (rep.unreachableCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            )
-                        } ?: Text(
-                            text = "AUDIT IN PROGRESS (${auditEntries.size} tested)",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-
-                        // Filter chips
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf("ALL", "ONLINE", "FAULTS").forEach { filter ->
-                                val selected = lineAuditFilter == filter
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = { onFilterChange(filter) },
-                                    label = { Text(filter, fontSize = 10.sp) },
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.height(28.dp),
+        // VIEW MODE B: Device Cards List View
+        if (lineViewMode == "LIST") {
+            // Line Audit Results Header & Filter Chips
+            if (auditEntries.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            state.lineAuditReport?.let { rep ->
+                                Text(
+                                    text = "${rep.onlineCount} Online • ${rep.unreachableCount} Unreachable",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (rep.unreachableCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 )
+                            } ?: Text(
+                                text = "AUDIT IN PROGRESS (${auditEntries.size} tested)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+
+                            // Filter chips
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf("ALL", "ONLINE", "FAULTS").forEach { filter ->
+                                    val selected = lineAuditFilter == filter
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { onFilterChange(filter) },
+                                        label = { Text(filter, fontSize = 10.sp) },
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.height(28.dp),
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            // Line Audit Results List
-            items(filteredEntries) { entry ->
-                val isOnline = entry.status == AuditStatus.ONLINE
-                val locPath = proj?.findDeviceLocationPath(entry.expectedDevice.address) ?: "Unplaced"
-                OutlinedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.outlinedCardColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (isOnline) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // Line Audit Results List
+                items(filteredEntries) { entry ->
+                    val isOnline = entry.status == AuditStatus.ONLINE
+                    val locPath = proj?.findDeviceLocationPath(entry.expectedDevice.address) ?: "Unplaced"
+                    OutlinedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.outlinedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isOnline) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                        ),
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isOnline) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(
-                                text = entry.expectedDevice.address.toString(),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (isOnline) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            )
-                        }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isOnline) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                            ) {
+                                Text(
+                                    text = entry.expectedDevice.address.toString(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (isOnline) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                )
+                            }
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = entry.expectedDevice.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = "${entry.expectedDevice.productName.ifBlank { entry.expectedDevice.manufacturerName }} • $locPath",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.expectedDevice.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "${entry.expectedDevice.productName.ifBlank { entry.expectedDevice.manufacturerName }} • $locPath",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
 
-                        // Latency / Status Badge
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isOnline) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, if (isOnline) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
-                        ) {
-                            Text(
-                                text = if (entry.pingResult.reachable) "${entry.pingResult.latencyMs}ms" else "TIMEOUT",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
+                            // Latency / Status Badge
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isOnline) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, if (isOnline) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+                            ) {
+                                Text(
+                                    text = if (entry.pingResult.reachable) "${entry.pingResult.latencyMs}ms" else "TIMEOUT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
 
-                        // Inspect / Info Action
-                        IconButton(
-                            onClick = { onInspectDevice(entry.expectedDevice.address) },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = "Inspect Device",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp),
-                            )
+                            // Inspect / Info Action
+                            IconButton(
+                                onClick = { onInspectDevice(entry.expectedDevice.address) },
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = "Inspect Device",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -1037,8 +1316,28 @@ private fun LineDiagnosticsContent(
     }
 }
 
+@Composable
+private fun MatrixLegendItem(color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Tab 2: Device Info & BCU (ETS Geräteinfo & DD0 Readout)
+// Tab 2: Device Info & BCU Properties (ETS Geräteinfo)
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -1215,6 +1514,9 @@ private fun DeviceInfoContent(
 
         // Authentic ETS Device Info Results Table Card
         diag?.let { d ->
+            val decodedMfr = KnxHardwareCatalog.resolveManufacturer(d.manufacturerId)
+            val decodedMask = KnxHardwareCatalog.resolveMask(d.maskVersionHex)
+
             item {
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
@@ -1276,16 +1578,32 @@ private fun DeviceInfoContent(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                        // 2-Column ETS Properties Table
+                        // 2-Column ETS Properties Table with Hardware Catalog Lookup
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            PropertyRow("Mask Version (DD0)", d.maskVersionHex ?: "Unknown")
-                            PropertyRow("Hardware Serial No.", d.serialNumberHex ?: "Unknown")
-                            PropertyRow("Manufacturer ID", d.manufacturerId?.let { "0x%04X".format(it) } ?: "Unknown")
-                            PropertyRow("Operational Run State", d.runState ?: "Normal")
-                            PropertyRow("Memory Load State", d.loadState ?: "Loaded")
                             PropertyRow(
-                                "Programming Mode LED",
-                                if (d.programmingModeActive) "ACTIVE (RED ON)" else "OFF (Normal)",
+                                name = "Mask Version (DD0)",
+                                value = if (decodedMask != null) "${d.maskVersionHex} — $decodedMask" else (d.maskVersionHex ?: "Unknown"),
+                            )
+                            PropertyRow(
+                                name = "Hardware Serial No.",
+                                value = d.serialNumberHex ?: "Unknown",
+                            )
+                            PropertyRow(
+                                name = "Manufacturer",
+                                value = if (decodedMfr != null) "$decodedMfr (0x%04X)".format(d.manufacturerId)
+                                else d.manufacturerId?.let { "0x%04X".format(it) } ?: "Unknown",
+                            )
+                            PropertyRow(
+                                name = "Operational Run State",
+                                value = d.runState ?: "Normal",
+                            )
+                            PropertyRow(
+                                name = "Memory Load State",
+                                value = d.loadState ?: "Loaded",
+                            )
+                            PropertyRow(
+                                name = "Programming Mode LED",
+                                value = if (d.programmingModeActive) "ACTIVE (RED ON)" else "OFF (Normal)",
                                 highlight = d.programmingModeActive,
                             )
                         }
@@ -1306,6 +1624,73 @@ private fun DeviceInfoContent(
                                 ) {
                                     Text("•", color = MaterialTheme.colorScheme.primary)
                                     Text(note, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+
+                        // Device Communication Objects Preview (if in project)
+                        projectDevice?.let { dev ->
+                            if (dev.comObjects.isNotEmpty()) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "COMMUNICATION OBJECTS (${dev.comObjects.size})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        text = "C R W T U",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                dev.comObjects.take(5).forEach { obj ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            text = "#${obj.number}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = obj.name.ifBlank { "Object ${obj.number}" },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            if (obj.functionText.isNotBlank()) {
+                                                Text(
+                                                    text = obj.functionText,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = obj.flags.formatCompact(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1661,7 +2046,359 @@ private fun ProgrammingModeContent(
 }
 
 // ---------------------------------------------------------------------------
-// Tab 4: Site Commissioning & Handover Report
+// Tab 4: Commissioning Walk-Test & Channel Sign-Off (Inbetriebnahme-Gehtest)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun CommissioningWalkTestContent(
+    state: AppUiState,
+    controller: AppController,
+    selectedRoom: String?,
+    onSelectRoom: (String?) -> Unit,
+    onFlagIssue: (GroupAddress) -> Unit,
+) {
+    val proj = state.project
+    val allGas = remember(proj) { proj?.groupAddresses?.values.orEmpty().toList() }
+
+    // Collect all spaces from project
+    val availableRooms = remember(proj) {
+        val spaces = mutableListOf<String>()
+        fun scan(loc: BuildingLocation) {
+            if (loc.type.equals("Room", ignoreCase = true) || loc.deviceAddresses.isNotEmpty()) {
+                spaces.add(loc.name)
+            }
+            loc.children.forEach { scan(it) }
+        }
+        proj?.locations?.forEach { scan(it) }
+        spaces.distinct()
+    }
+
+    // Filter GAs for selected room
+    val activeGas = remember(allGas, selectedRoom, proj) {
+        if (selectedRoom == null) allGas
+        else {
+            allGas.filter { ga ->
+                ga.linkedObjects.any { link ->
+                    link.deviceAddress?.let { devAddr ->
+                        proj?.findDeviceLocationPath(devAddr)?.contains(selectedRoom, ignoreCase = true) == true
+                    } ?: false
+                }
+            }
+        }
+    }
+
+    val verifiedCount = activeGas.count { it.address in state.walkTestVerifiedChannels }
+    val flaggedCount = activeGas.count { it.address in state.walkTestFlaggedChannels }
+    val completionPercent = if (activeGas.isNotEmpty()) (verifiedCount * 100) / activeGas.size else 0
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Room Filter Carousel
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "COMMISSIONING ROOM / SPACE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "${verifiedCount}/${activeGas.size} Verified ($completionPercent%)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    item {
+                        FilterChip(
+                            selected = selectedRoom == null,
+                            onClick = { onSelectRoom(null) },
+                            label = { Text("All Rooms (${allGas.size})", fontSize = 11.sp) },
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                    }
+                    items(availableRooms) { room ->
+                        val isSelected = selectedRoom == room
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onSelectRoom(room) },
+                            label = { Text(room, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        // Room Commissioning Progress Meter Card
+        item {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(
+                                text = selectedRoom ?: "Entire Building Commissioning",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "Test switching, dimming, & blinds. Sign off each channel as functional.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "$completionPercent%",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                    }
+
+                    LinearProgressIndicator(
+                        progress = { if (activeGas.isNotEmpty()) verifiedCount.toFloat() / activeGas.size.toFloat() else 0f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    )
+                }
+            }
+        }
+
+        // Channels List for the Room
+        items(activeGas) { gaInfo ->
+            val ga = gaInfo.address
+            val isVerified = ga in state.walkTestVerifiedChannels
+            val issueNote = state.walkTestFlaggedChannels[ga]
+            val isBlinking = state.walkTestActive && state.walkTestGroupAddress == ga
+            val liveVal = state.groupLiveValues[ga]?.valueText
+
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = if (isVerified) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                    else MaterialTheme.colorScheme.surface,
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    when {
+                        isVerified -> MaterialTheme.colorScheme.primary
+                        issueNote != null -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.outlineVariant
+                    },
+                ),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Header: GA, Name & Sign-Off Status Chip
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                            ) {
+                                Text(
+                                    text = ga.toString(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = gaInfo.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "${gaInfo.dpt ?: "DPT 1.001"} • ${liveVal?.let { "Live: $it" } ?: "Not read yet"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+
+                        // Commissioning Sign-off Chip
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = when {
+                                isVerified -> MaterialTheme.colorScheme.primary
+                                issueNote != null -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                            },
+                            modifier = Modifier.clickable { controller.toggleChannelWalkTestVerified(ga) },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = if (isVerified) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                    contentDescription = null,
+                                    tint = if (isVerified) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Text(
+                                    text = if (isVerified) "VERIFIED" else if (issueNote != null) "ISSUE" else "SIGN OFF",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isVerified) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
+                    // Issue Note Banner if flagged
+                    issueNote?.let { note ->
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = "⚠️ Issue: $note",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(6.dp),
+                            )
+                        }
+                    }
+
+                    // Direct Field Controls (ON / OFF / Blink / Dim)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(
+                            onClick = { controller.writeGroupSwitch(ga.toString(), false) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) {
+                            Text("OFF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { controller.writeGroupSwitch(ga.toString(), true) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                        ) {
+                            Text("ON", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (isBlinking) controller.stopWalkTestBlink()
+                                else controller.startWalkTestBlink(ga.toString())
+                            },
+                            modifier = Modifier.weight(1.2f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                            colors = if (isBlinking) ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                            else ButtonDefaults.outlinedButtonColors(),
+                        ) {
+                            Icon(
+                                Icons.Default.Bolt,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = if (isBlinking) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(2.dp))
+                            Text(
+                                text = if (isBlinking) "Blink (${state.walkTestStepCount})" else "Blink",
+                                fontSize = 11.sp,
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { onFlagIssue(ga) },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Flag,
+                                contentDescription = "Flag Issue",
+                                tint = if (issueNote != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 5: Site Commissioning & Handover Report
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -1674,6 +2411,8 @@ private fun SiteCommissioningContent(
 ) {
     val proj = state.project
     val report = state.siteCheckReport
+    val totalGas = proj?.groupAddresses?.size ?: 0
+    val verifiedCount = state.walkTestVerifiedChannels.size
 
     LazyColumn(
         modifier = Modifier
@@ -1750,9 +2489,11 @@ private fun SiteCommissioningContent(
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    text = "${report.onlineDevices} of ${report.totalDevicesExpected} devices verified online",
+                                    text = "${report.onlineDevices} of ${report.totalDevicesExpected} devices verified online\n" +
+                                        "${verifiedCount} of $totalGas channels walk-tested & signed off",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 16.sp,
                                 )
                             }
                             Surface(
