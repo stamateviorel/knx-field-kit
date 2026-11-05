@@ -100,6 +100,16 @@ val MobileLightPalette = MobileColorScheme(
 
 val LocalMobileColors = staticCompositionLocalOf { MobileDarkPalette }
 
+object EtsShapes {
+    val Row = RoundedCornerShape(6.dp)
+    val Card = RoundedCornerShape(6.dp)
+    val Badge = RoundedCornerShape(3.dp)
+    val Button = RoundedCornerShape(4.dp)
+    val Chip = RoundedCornerShape(4.dp)
+    val Dialog = RoundedCornerShape(8.dp)
+    val Search = RoundedCornerShape(6.dp)
+}
+
 object MobileColors {
     val BgCanvas: Color @Composable get() = LocalMobileColors.current.bgCanvas
     val BgTopBar: Color @Composable get() = LocalMobileColors.current.bgTopBar
@@ -198,14 +208,14 @@ fun MobileFieldKitTheme(
 fun MobileBadge(text: String, color: Color, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .background(color.copy(alpha = 0.16f), RoundedCornerShape(6.dp))
-            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .background(color.copy(alpha = 0.16f), EtsShapes.Badge)
+            .border(1.dp, color.copy(alpha = 0.45f), EtsShapes.Badge)
+            .padding(horizontal = 5.dp, vertical = 1.5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
-            fontSize = 10.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             color = color,
@@ -222,16 +232,16 @@ fun MobileActionPill(
 ) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(accent.copy(alpha = 0.16f))
-            .border(1.dp, accent.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+            .clip(EtsShapes.Button)
+            .background(accent.copy(alpha = 0.14f))
+            .border(1.dp, accent.copy(alpha = 0.55f), EtsShapes.Button)
             .clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 5.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
             color = accent,
             maxLines = 1,
@@ -250,7 +260,7 @@ fun MobileComFlagsStrip(flags: ComObjectFlags, modifier: Modifier = Modifier) {
     )
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         for ((letter, enabled) in entries) {
@@ -259,14 +269,14 @@ fun MobileComFlagsStrip(flags: ComObjectFlags, modifier: Modifier = Modifier) {
             val border = if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant
             Box(
                 modifier = Modifier
-                    .background(bg, RoundedCornerShape(4.dp))
-                    .border(1.dp, border, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 5.dp, vertical = 1.dp),
+                    .background(bg, EtsShapes.Badge)
+                    .border(0.8.dp, border, EtsShapes.Badge)
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = letter,
-                    fontSize = 9.sp,
+                    fontSize = 8.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     color = fg,
@@ -279,18 +289,18 @@ fun MobileComFlagsStrip(flags: ComObjectFlags, modifier: Modifier = Modifier) {
 @Composable
 fun MobileMetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = EtsShapes.Card,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = label,
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -298,7 +308,7 @@ fun MobileMetricTile(label: String, value: String, accent: Color, modifier: Modi
             )
             Text(
                 text = value,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 color = accent,
@@ -317,25 +327,25 @@ fun MobileSearchField(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = EtsShapes.Search,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier
             .fillMaxWidth()
-            .height(46.dp),
+            .height(38.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(19.dp),
+                modifier = Modifier.size(16.dp),
             )
             Box(
                 modifier = Modifier.weight(1f),
@@ -344,7 +354,7 @@ fun MobileSearchField(
                 if (value.isEmpty()) {
                     Text(
                         text = placeholder,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -355,7 +365,7 @@ fun MobileSearchField(
                     onValueChange = onValueChange,
                     singleLine = true,
                     textStyle = TextStyle(
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -368,7 +378,7 @@ fun MobileSearchField(
                     contentDescription = "Clear",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .size(18.dp)
+                        .size(16.dp)
                         .clickable { onValueChange("") },
                 )
             }

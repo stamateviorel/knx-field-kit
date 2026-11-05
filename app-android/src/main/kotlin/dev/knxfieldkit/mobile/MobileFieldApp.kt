@@ -105,8 +105,8 @@ fun MobileFieldApp(
                         Box(
                             modifier = Modifier
                                 .padding(start = 12.dp, end = 8.dp)
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .size(32.dp)
+                                .clip(EtsShapes.Badge)
                                 .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -127,15 +127,18 @@ fun MobileFieldApp(
                             state.connectionState is ConnectionState.Error -> MaterialTheme.colorScheme.error
                             else -> MaterialTheme.colorScheme.outline
                         }
+                        val connectedHost = if (isConnected) state.savedGatewayHost else null
                         val statusText = when {
-                            state.isSimulatorActive -> "Sim"
+                            state.isSimulatorActive -> "Sim Bus"
+                            connectedHost != null -> "Live: $connectedHost"
                             isConnected -> "Live IP"
-                            state.connectionState is ConnectionState.Connecting -> "Linking"
+                            state.connectionState is ConnectionState.Connecting -> "Linking..."
                             else -> "Connect"
                         }
                         AssistChip(
                             onClick = { controller.toggleConnectDialog(true) },
-                            label = { Text(statusText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                            shape = EtsShapes.Button,
+                            label = { Text(statusText, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold) },
                             leadingIcon = {
                                 Box(
                                     modifier = Modifier
@@ -150,6 +153,35 @@ fun MobileFieldApp(
                                 borderColor = MaterialTheme.colorScheme.outlineVariant,
                             ),
                         )
+
+                        state.keyring?.let { kr ->
+                            Spacer(Modifier.width(2.dp))
+                            Surface(
+                                shape = EtsShapes.Badge,
+                                color = Color(0xFF005596),
+                                modifier = Modifier.clickable { showProjectSheet = true },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Shield,
+                                        contentDescription = "KNX Secure Keyring",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(11.dp),
+                                    )
+                                    Text(
+                                        text = "KEYS (${kr.groupKeysHex.size})",
+                                        fontSize = 9.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                    )
+                                }
+                            }
+                        }
 
                         Spacer(Modifier.width(2.dp))
 
@@ -213,11 +245,11 @@ fun MobileFieldApp(
                                 containerColor = MaterialTheme.colorScheme.error,
                                 contentColor = MaterialTheme.colorScheme.onError,
                             ),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = EtsShapes.Button,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(28.dp),
+                            modifier = Modifier.height(26.dp),
                         ) {
-                            Text("STOP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("STOP", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

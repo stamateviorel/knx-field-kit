@@ -16,12 +16,12 @@ if not exist "%ADB%" (
 echo Checking connected Android devices via ADB...
 "%ADB%" devices
 echo.
-echo Installing KNX Field Kit v3.10 to connected Android phone...
+echo Installing KNX Field Kit v3.11 to connected Android phone...
 "%ADB%" install -r "%APK%"
 if errorlevel 1 (
     echo.
     echo [HINT] Connect your Android phone via USB with USB Debugging enabled, or copy:
-    echo        "%~dp0KNXFieldKit-android-v3.9.apk"
+    echo        "%~dp0KNXFieldKit-android-v3.11.apk"
     echo        directly to your phone and tap to install!
     exit /b 1
 )
