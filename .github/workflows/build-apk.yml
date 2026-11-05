@@ -30,36 +30,34 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Make Gradle Wrapper Executable
         run: chmod +x gradlew
 
       - name: Run Core Unit Tests
-        run: ./gradlew :core-model:test :core-knxproj:test
+        run: ./gradlew :core-model:test :core-knxproj:test --no-daemon
 
       - name: Assemble Android Debug APK
-        run: ./gradlew :app-android:assembleDebug --stacktrace
+        run: ./gradlew :app-android:assembleDebug --no-daemon --stacktrace
 
       - name: Prepare APK Artifact
         run: |
           mkdir -p dist
-          cp app-android/build/outputs/apk/debug/app-android-debug.apk dist/KNXFieldKit-android.apk
+          cp app-android/build/outputs/apk/debug/app-android-debug.apk dist/KNXFieldKit-android-v3.7.apk
           ls -lh dist/
 
-      - name: Upload APK to Artifacts
+      - name: Upload APK to Workflow Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: KNXFieldKit-android-apk
-          path: dist/KNXFieldKit-android.apk
+          name: KNXFieldKit-android-v3.7-apk
+          path: dist/KNXFieldKit-android-v3.7.apk
           retention-days: 30
 
       - name: Create GitHub Release on Tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/KNXFieldKit-android.apk
+          files: dist/KNXFieldKit-android-v3.7.apk
+          name: "KNX Field Kit ${{ github.ref_name }}"
           generate_release_notes: true
           draft: false
           prerelease: false
