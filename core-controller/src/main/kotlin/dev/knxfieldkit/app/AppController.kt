@@ -279,6 +279,20 @@ class AppController(
         _uiState.update { it.copy(showConnectDialog = show) }
     }
 
+    fun closeProject() {
+        _uiState.update { current ->
+            current.copy(
+                project = null,
+                projectSourceLabel = "No Project Loaded",
+                keyring = null,
+                selectedDeviceAddress = null,
+                selectedGroupAddressInput = "",
+                explorerSelection = ExplorerSelection.TopologyRoot,
+                statusMessage = "Project closed",
+            )
+        }
+    }
+
     fun openProjectOrKeyringFile(file: File) {
         scope.launch {
             if (!file.isFile) {

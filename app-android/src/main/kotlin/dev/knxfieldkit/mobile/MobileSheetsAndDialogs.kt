@@ -33,6 +33,7 @@ fun MobileProjectMenuSheet(
     state: AppUiState,
     onOpenFile: () -> Unit,
     onOpenRecent: (File) -> Unit,
+    onCloseProject: () -> Unit = {},
     onShareMarkdown: () -> Unit,
     onShareHtml: () -> Unit,
     onDismiss: () -> Unit,
@@ -81,6 +82,26 @@ fun MobileProjectMenuSheet(
                 Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Open .knxproj or .knxkeys File", fontWeight = FontWeight.Bold)
+            }
+
+            val currentProject = state.project
+            if (currentProject != null) {
+                OutlinedButton(
+                    onClick = {
+                        onDismiss()
+                        onCloseProject()
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                    shape = EtsShapes.Card,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Close Project (${currentProject.name})", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

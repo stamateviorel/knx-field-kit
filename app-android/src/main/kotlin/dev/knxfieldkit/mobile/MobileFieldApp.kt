@@ -400,6 +400,7 @@ fun MobileFieldApp(
                     state = state,
                     onOpenFile = onOpenProjectFile,
                     onOpenRecent = { controller.openProjectOrKeyringFile(it) },
+                    onCloseProject = { controller.closeProject() },
                     onShareMarkdown = onShareMarkdownSummary,
                     onShareHtml = onShareHtmlReport,
                     onDismiss = { showProjectSheet = false },
