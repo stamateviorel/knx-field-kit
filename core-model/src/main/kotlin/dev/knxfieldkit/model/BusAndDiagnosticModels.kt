@@ -24,7 +24,8 @@ data class BusTelegram(
     val priority: TelegramPriority = TelegramPriority.LOW,
     val hopCount: Int = 6,
     val repeated: Boolean = false,
-    val rawFrameHex: String = ""
+    val rawFrameHex: String = "",
+    val isSecure: Boolean = false
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -41,6 +42,7 @@ data class BusTelegram(
         if (hopCount != other.hopCount) return false
         if (repeated != other.repeated) return false
         if (rawFrameHex != other.rawFrameHex) return false
+        if (isSecure != other.isSecure) return false
         return true
     }
 
@@ -56,6 +58,7 @@ data class BusTelegram(
         result = 31 * result + hopCount
         result = 31 * result + repeated.hashCode()
         result = 31 * result + rawFrameHex.hashCode()
+        result = 31 * result + isSecure.hashCode()
         return result
     }
 }

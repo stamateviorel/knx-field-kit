@@ -332,6 +332,8 @@ class AppController(
                     val kr = withContext(Dispatchers.IO) {
                         KnxKeyringReader.parseKeyring(prompt.file, password)
                     }
+                    simulatedClient.setKeyring(kr)
+                    hardwareClient.setKeyring(kr)
                     val prefs = UserPrefsStore.recordRecentFile(prompt.file)
                     _uiState.update {
                         it.copy(
@@ -587,6 +589,7 @@ class AppController(
             runCatching { activeClient.disconnect() }
             multicastReleaseCallback?.invoke()
             activeClient = simulatedClient
+            simulatedClient.setKeyring(_uiState.value.keyring)
             _uiState.value.project?.let { simulatedClient.syncWithProject(it) }
             simulatedClient.connect(BusConnectionConfig.Simulator(enablePeriodicTraffic = true))
             _uiState.update {
@@ -609,6 +612,7 @@ class AppController(
             runCatching { activeClient.disconnect() }
             multicastReleaseCallback?.invoke()
             activeClient = hardwareClient
+            hardwareClient.setKeyring(_uiState.value.keyring)
             val prefs = UserPrefsStore.saveGateway(host.trim(), port, useNat)
             try {
                 hardwareClient.connect(
@@ -640,6 +644,7 @@ class AppController(
             runCatching { activeClient.disconnect() }
             multicastAcquireCallback?.invoke()
             activeClient = hardwareClient
+            hardwareClient.setKeyring(_uiState.value.keyring)
             try {
                 hardwareClient.connect(BusConnectionConfig.IpRouting(multicastAddress = multicastAddress.trim(), port = port))
                 _uiState.update {

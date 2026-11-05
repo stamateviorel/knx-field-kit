@@ -464,6 +464,22 @@ class SimulatedKnxBusClient(
     private val groupValues = ConcurrentHashMap<GroupAddress, Pair<IndividualAddress, ByteArray>>()
     private var periodicJob: Job? = null
 
+    @Volatile
+    var activeKeyring: KnxKeyring? = null
+        private set
+    @Volatile
+    var activeKeyringInterface: KeyringInterface? = null
+        private set
+
+    override fun setKeyring(keyring: KnxKeyring?) {
+        this.activeKeyring = keyring
+    }
+
+    fun setKeyring(keyring: KnxKeyring?, iface: KeyringInterface? = null) {
+        this.activeKeyring = keyring
+        this.activeKeyringInterface = iface
+    }
+
     init {
         syncWithProject(DemoKnxProjectFactory.createDemoVillaProject())
         seedDemoGroupValues()
@@ -873,6 +889,23 @@ class SimulatedKnxBusClient(
         apci: ApciType,
         payload: ByteArray,
     ) {
+        val kr = activeKeyring
+        val isSecure = dstGroup != null && kr != null && kr.isGroupSecure(dstGroup)
+        val rawHex = if (dstGroup != null && isSecure) {
+            val keyHex = kr?.groupKeysHex?.get(dstGroup)
+            if (keyHex != null && keyHex.length == 32) {
+                val cemi = dev.knxfieldkit.bus.secure.KnxSecureDataCodec.encodeSecureGroupTelegram(
+                    source = source,
+                    destination = dstGroup,
+                    apci = apci,
+                    payload = payload,
+                    compact6Bit = payload.size == 1 && (payload[0].toInt() and 0xFF) <= 0x3F,
+                    key = HexBytes.fromHex(keyHex),
+                )
+                HexBytes.toHex(cemi)
+            } else ""
+        } else ""
+
         _incomingTelegrams.tryEmit(
             BusTelegram(
                 id = telegramSeq.incrementAndGet(),
@@ -882,6 +915,8 @@ class SimulatedKnxBusClient(
                 destinationIndividual = dstInd,
                 apci = apci,
                 payload = payload,
+                isSecure = isSecure,
+                rawFrameHex = rawHex,
             )
         )
     }

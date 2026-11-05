@@ -43,6 +43,7 @@ data class GroupAddressInfo(
     val description: String = "",
     val dpt: String? = null,
     val linkedObjects: List<ComObjectLink> = emptyList(),
+    val isSecure: Boolean = false,
 )
 
 data class GroupRangeNode(
@@ -70,6 +71,7 @@ data class ProjectDevice(
     val maskVersion: String? = null,
     val groupAddresses: List<GroupAddress> = emptyList(),
     val comObjects: List<DeviceComObject> = emptyList(),
+    val isSecure: Boolean = false,
 )
 
 data class TopologyLine(
@@ -128,7 +130,10 @@ data class KnxKeyring(
     val interfaces: List<KeyringInterface> = emptyList(),
     val groupKeysHex: Map<GroupAddress, String> = emptyMap(),
     val deviceToolKeysHex: Map<IndividualAddress, String> = emptyMap(),
-)
+) {
+    fun isGroupSecure(ga: GroupAddress): Boolean = groupKeysHex.containsKey(ga)
+    fun isDeviceSecure(ia: IndividualAddress): Boolean = deviceToolKeysHex.containsKey(ia)
+}
 
 data class KnxProject(
     val projectId: String,

@@ -149,6 +149,7 @@ sealed interface TopologyTreeNode {
 enum class GroupViewMode(val label: String, val icon: ImageVector) {
     TREE("Tree View", Icons.Default.AccountTree),
     FOLDERS("Folders", Icons.Default.FolderOpen),
+    FLAT("Flat List", Icons.Default.ViewList),
 }
 
 sealed interface GroupTreeNode {
@@ -320,60 +321,132 @@ fun MobileExplorerScreen(
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // 1. Sleek ETS Perspective & Scope Indicator
+        // 1. Sleek ETS Unified Command Bar (Search + Quick Action Toggles)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
+                .padding(bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            MobileSearchField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = when (pane) {
+                    MobileExplorerPane.ROOMS -> "Search rooms, functions, circuits..."
+                    MobileExplorerPane.TOPOLOGY -> "Search 1.1.1, name, line..."
+                    MobileExplorerPane.GROUPS -> "Search 0/1/1, DPTs, names..."
+                },
+                modifier = Modifier.weight(1f),
+            )
+
+            // Quick Actions: Expand/Collapse All + View Mode
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                Row(
+                    modifier = Modifier.padding(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    val isAnyExpanded = when (pane) {
+                        MobileExplorerPane.ROOMS -> expandedTreeIds.isNotEmpty()
+                        MobileExplorerPane.GROUPS -> expandedGroupIds.isNotEmpty()
+                        MobileExplorerPane.TOPOLOGY -> expandedTopologyIds.isNotEmpty()
+                    }
+
+                    IconButton(
+                        onClick = {
+                            when (pane) {
+                                MobileExplorerPane.ROOMS -> {
+                                    if (expandedTreeIds.isNotEmpty()) {
+                                        expandedTreeIds = emptySet()
+                                    } else {
+                                        val all = mutableSetOf<String>()
+                                        fun collect(loc: BuildingLocation, prefix: String) {
+                                            val path = if (prefix.isEmpty()) loc.name else "$prefix/${loc.name}"
+                                            all += path
+                                            loc.functions.forEach { all += "$path/fn:${it.id}" }
+                                            loc.children.forEach { collect(it, path) }
+                                        }
+                                        project?.locations?.forEach { collect(it, "") }
+                                        expandedTreeIds = all
+                                    }
+                                }
+                                MobileExplorerPane.GROUPS -> {
+                                    if (expandedGroupIds.isNotEmpty()) {
+                                        expandedGroupIds = emptySet()
+                                    } else {
+                                        val all = mutableSetOf<String>()
+                                        project?.effectiveGroupRanges?.forEach { main ->
+                                            all += main.id
+                                            main.children.forEach { sub ->
+                                                all += sub.id
+                                            }
+                                        }
+                                        expandedGroupIds = all
+                                    }
+                                }
+                                MobileExplorerPane.TOPOLOGY -> {
+                                    if (expandedTopologyIds.isNotEmpty()) {
+                                        expandedTopologyIds = emptySet()
+                                    } else {
+                                        val all = mutableSetOf<String>()
+                                        project?.areas?.forEach { area ->
+                                            all += "area:${area.area}"
+                                            area.lines.forEach { line ->
+                                                all += "line:${line.id}"
+                                            }
+                                        }
+                                        expandedTopologyIds = all
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(36.dp),
                     ) {
-                        Icon(pane.icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text(
-                            text = pane.label.uppercase(),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            letterSpacing = 0.5.sp,
+                        Icon(
+                            imageVector = if (isAnyExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                            contentDescription = if (isAnyExpanded) "Collapse All" else "Expand All",
+                            modifier = Modifier.size(18.dp),
+                            tint = if (isAnyExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
 
-                val scopeDesc = when (pane) {
-                    MobileExplorerPane.ROOMS -> "${project?.locations?.size ?: 0} buildings • ${project?.locations?.sumOf { it.collectAllDeviceAddresses().size } ?: 0} devs"
-                    MobileExplorerPane.TOPOLOGY -> "${project?.areas?.size ?: 0} areas • ${project?.allLines?.size ?: 0} lines • ${project?.allDevices?.size ?: 0} devs"
-                    MobileExplorerPane.GROUPS -> "${project?.groupAddresses?.size ?: 0} group addresses"
+                    if (pane == MobileExplorerPane.ROOMS) {
+                        IconButton(
+                            onClick = {
+                                buildingViewMode = if (buildingViewMode == BuildingViewMode.TREE) BuildingViewMode.CARDS else BuildingViewMode.TREE
+                            },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (buildingViewMode == BuildingViewMode.TREE) Icons.Default.AccountTree else Icons.Default.FolderOpen,
+                                contentDescription = "Switch View Mode",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    } else if (pane == MobileExplorerPane.GROUPS) {
+                        IconButton(
+                            onClick = {
+                                groupViewMode = if (groupViewMode == GroupViewMode.TREE) GroupViewMode.FLAT else GroupViewMode.TREE
+                            },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (groupViewMode == GroupViewMode.TREE) Icons.Default.AccountTree else Icons.Default.ViewList,
+                                contentDescription = "Switch Group View Mode",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                 }
-                Text(
-                    text = scopeDesc,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
         }
-
-        // 2. Google Material 3 Search Bar
-        MobileSearchField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = "Search addresses (1/1/1), names, DPTs...",
-        )
 
         // Empty Project State
         if (project == null) {
@@ -2678,6 +2751,28 @@ private fun MobileGroupAddressCard(
                     )
                 }
 
+                if (ga.isSecure) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF047857),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(9.dp))
+                            Text(
+                                text = "SECURE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     text = ga.name,
                     style = MaterialTheme.typography.titleSmall,
@@ -3367,25 +3462,49 @@ private fun BuildingTreeFunctionItem(
         else -> Icons.Default.Widgets
     }
 
+    val isBlindFunction = fn.type == "FT-3" || fnNameLower.contains("blind") || fnNameLower.contains("shutter") || fnNameLower.contains("jal") || fnNameLower.contains("rollladen")
+
     // Resolve Primary Absolute Dimmer GA
-    val primaryDimmerGa = remember(linkedGas, fn) {
-        linkedGas.firstOrNull { ga ->
-            val d = DptCodec.resolveMainDpt(ga.dpt)
-            val dptStr = ga.dpt?.lowercase() ?: ""
-            val nameL = ga.name.lowercase()
-            (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED ||
-                dptStr.contains("5.001") || dptStr.contains("5.004") || dptStr.contains("5.010") ||
-                dptStr.startsWith("5.") || dptStr.startsWith("dpst-5-") ||
-                nameL.contains("dimm") || nameL.contains("helligkeit") || nameL.contains("brightness") ||
-                nameL.contains("wert") || nameL.contains("value") || nameL.contains("%") ||
-                nameL.contains("absolut") || nameL.contains("level") || nameL.contains("position") ||
-                nameL.contains("prozent") || nameL.contains("percent")) &&
-                !nameL.contains("schalt") && !nameL.contains("switch") && !nameL.contains("step") &&
-                !nameL.contains("relativ") && !nameL.contains("status")
-        } ?: linkedGas.firstOrNull { ga ->
-            val nameL = ga.name.lowercase()
-            (nameL.contains("dimm") || nameL.contains("helligkeit") || nameL.contains("wert")) &&
-                !nameL.contains("schalt") && !nameL.contains("step")
+    val primaryDimmerGa = remember(linkedGas, fn, isBlindFunction) {
+        if (isBlindFunction) null
+        else {
+            linkedGas.firstOrNull { ga ->
+                val d = DptCodec.resolveMainDpt(ga.dpt)
+                val dptStr = ga.dpt?.lowercase() ?: ""
+                val nameL = ga.name.lowercase()
+                (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED ||
+                    dptStr.contains("5.001") || dptStr.contains("5.004") || dptStr.contains("5.010") ||
+                    dptStr.startsWith("5.") || dptStr.startsWith("dpst-5-") ||
+                    nameL.contains("dimm") || nameL.contains("helligkeit") || nameL.contains("brightness") ||
+                    nameL.contains("wert") || nameL.contains("value") || nameL.contains("%") ||
+                    nameL.contains("absolut") || nameL.contains("level") ||
+                    nameL.contains("prozent") || nameL.contains("percent")) &&
+                    !nameL.contains("schalt") && !nameL.contains("switch") && !nameL.contains("step") &&
+                    !nameL.contains("relativ") && !nameL.contains("status")
+            } ?: linkedGas.firstOrNull { ga ->
+                val nameL = ga.name.lowercase()
+                (nameL.contains("dimm") || nameL.contains("helligkeit") || nameL.contains("wert")) &&
+                    !nameL.contains("schalt") && !nameL.contains("step")
+            }
+        }
+    }
+
+    // Resolve Primary Blind Position GA (DPT 5.001 / position %)
+    val primaryBlindPosGa = remember(linkedGas, isBlindFunction) {
+        if (!isBlindFunction) null
+        else {
+            linkedGas.firstOrNull { ga ->
+                val d = DptCodec.resolveMainDpt(ga.dpt)
+                val dptStr = ga.dpt?.lowercase() ?: ""
+                val nameL = ga.name.lowercase()
+                (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED || dptStr.contains("5.001") ||
+                    nameL.contains("position") || nameL.contains("höhe") || nameL.contains("pos") ||
+                    nameL.contains("lamelle") || nameL.contains("%")) &&
+                    !nameL.contains("status") && !nameL.contains("rückmeldung")
+            } ?: linkedGas.firstOrNull { ga ->
+                val d = DptCodec.resolveMainDpt(ga.dpt)
+                (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED) && !ga.name.contains("status", ignoreCase = true)
+            }
         }
     }
 
@@ -3402,7 +3521,6 @@ private fun BuildingTreeFunctionItem(
         }
     }
 
-    val isBlindFunction = fn.type == "FT-3" || fnNameLower.contains("blind") || fnNameLower.contains("shutter") || fnNameLower.contains("jal") || fnNameLower.contains("rollladen")
     val blindMoveGa = if (isBlindFunction) {
         linkedGas.firstOrNull { ga -> ga.dpt?.contains("1.008") == true || ga.name.contains("auf/ab", ignoreCase = true) || ga.name.contains("up/down", ignoreCase = true) || ga.name.contains("fahren", ignoreCase = true) } ?: primarySwitchGa
     } else null
@@ -3417,6 +3535,10 @@ private fun BuildingTreeFunctionItem(
 
     val statusGa = remember(linkedGas) {
         linkedGas.firstOrNull { ga -> ga.name.contains("status", ignoreCase = true) || ga.name.contains("rückmeldung", ignoreCase = true) }
+    }
+
+    val isFunctionSecure = remember(linkedGas, state.keyring) {
+        linkedGas.any { it.isSecure || state.keyring?.isGroupSecure(it.address) == true }
     }
 
     Row(
@@ -3473,12 +3595,38 @@ private fun BuildingTreeFunctionItem(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(
-                                text = "${node.gaCount} GAs" + (if (primaryDimmerGa != null) " • Dimmer" else if (primarySwitchGa != null) " • Switch" else ""),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = "${node.gaCount} GAs" + (if (primaryDimmerGa != null) " • Dimmer" else if (primaryBlindPosGa != null) " • Blind Pos" else if (primarySwitchGa != null) " • Switch" else ""),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (isFunctionSecure) {
+                                    Surface(
+                                        shape = RoundedCornerShape(3.dp),
+                                        color = Color(0xFF047857),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
+                                            Text(
+                                                text = "SECURE",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 7.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -3662,6 +3810,105 @@ private fun BuildingTreeFunctionItem(
                                     value = sliderPos,
                                     onValueChange = { sliderPos = it },
                                     onValueChangeFinished = { controller.writeGroupPercent(dimText, sliderPos.toDouble()) },
+                                    valueRange = 0f..100f,
+                                    modifier = Modifier.weight(1f).height(24.dp),
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Text(
+                                        text = "${sliderPos.toInt()}%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If Blind with Position Control: Direct Integrated Position Slider and Presets!
+                if (primaryBlindPosGa != null) {
+                    val posText = primaryBlindPosGa.address.toString()
+                    val posLiveVal = (statusGa ?: primaryBlindPosGa).let { state.groupLiveValues[it.address]?.valueText }
+                    val livePct = remember(posLiveVal) {
+                        posLiveVal?.replace("%", "")?.trim()?.toDoubleOrNull()?.toFloat() ?: 0f
+                    }
+                    var sliderPos by remember(livePct) { mutableFloatStateOf(livePct.coerceIn(0f, 100f)) }
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                        border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            // Presets Row + Read
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    listOf(0, 25, 50, 75, 100).forEach { pct ->
+                                        FilledTonalButton(
+                                            onClick = {
+                                                sliderPos = pct.toFloat()
+                                                controller.writeGroupPercent(posText, pct.toDouble())
+                                            },
+                                            shape = RoundedCornerShape(4.dp),
+                                            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 1.dp),
+                                            modifier = Modifier.height(24.dp),
+                                            colors = if (sliderPos.toInt() == pct) {
+                                                ButtonDefaults.filledTonalButtonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                                )
+                                            } else ButtonDefaults.filledTonalButtonColors(),
+                                        ) {
+                                            Text(
+                                                text = when (pct) {
+                                                    0 -> "UP (0%)"
+                                                    100 -> "DN (100%)"
+                                                    else -> "$pct%"
+                                                },
+                                                fontSize = 8.5.sp,
+                                                fontWeight = if (sliderPos.toInt() == pct) FontWeight.Bold else FontWeight.Normal,
+                                            )
+                                        }
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = { controller.readGroupAddress(posText) },
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 1.dp),
+                                    modifier = Modifier.height(24.dp),
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(10.dp))
+                                    Spacer(Modifier.width(2.dp))
+                                    Text("R", fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            // Slider Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(Icons.Default.Window, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
+                                Slider(
+                                    value = sliderPos,
+                                    onValueChange = { sliderPos = it },
+                                    onValueChangeFinished = { controller.writeGroupPercent(posText, sliderPos.toDouble()) },
                                     valueRange = 0f..100f,
                                     modifier = Modifier.weight(1f).height(24.dp),
                                 )
@@ -4026,6 +4273,28 @@ private fun BuildingTreeGaLeafItem(
                             }
                         }
 
+                        if (ga.isSecure) {
+                            Surface(
+                                shape = RoundedCornerShape(3.dp),
+                                color = Color(0xFF047857),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
+                                    Text(
+                                        text = "SECURE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 7.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                    )
+                                }
+                            }
+                        }
+
                         Text(
                             text = ga.name.ifBlank { "Group Address" },
                             style = MaterialTheme.typography.bodySmall,
@@ -4116,6 +4385,28 @@ private fun BuildingTreeDeviceItem(
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                     )
+                }
+
+                if (dev.isSecure || state.keyring?.isDeviceSecure(dev.address) == true) {
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = Color(0xFF047857),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
+                            Text(
+                                text = "SECURE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 7.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            )
+                        }
+                    }
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -5348,6 +5639,28 @@ private fun GroupTreeLeafItem(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
                                 )
+                            }
+                        }
+
+                        if (ga.isSecure) {
+                            Surface(
+                                shape = RoundedCornerShape(3.dp),
+                                color = Color(0xFF047857),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
+                                    Text(
+                                        text = "SECURE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 7.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                    )
+                                }
                             }
                         }
 

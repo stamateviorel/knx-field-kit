@@ -28,6 +28,8 @@ interface KnxBusClient : AutoCloseable {
     val connectionState: StateFlow<ConnectionState>
     val incomingTelegrams: SharedFlow<BusTelegram>
 
+    fun setKeyring(keyring: dev.knxfieldkit.model.KnxKeyring?) {}
+
     suspend fun discoverGateways(timeoutMs: Long = 3_000L): List<GatewayEndpoint>
 
     suspend fun connect(config: BusConnectionConfig)

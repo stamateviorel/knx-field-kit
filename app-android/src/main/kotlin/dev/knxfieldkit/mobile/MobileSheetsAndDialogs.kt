@@ -348,6 +348,38 @@ fun MobileGatewayConnectSheet(
                 }
             }
 
+            state.keyring?.let { kr ->
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF064E3B).copy(alpha = 0.2f),
+                    border = BorderStroke(1.dp, Color(0xFF059669).copy(alpha = 0.6f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Default.Shield, contentDescription = "KNX Secure Keyring", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "KNX SECURE KEYRING ACTIVE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF10B981),
+                                fontSize = 10.sp,
+                            )
+                            Text(
+                                text = "${kr.projectName} • ${kr.groupKeysHex.size} secure GAs • ${kr.interfaces.size} interface credentials",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    }
+                }
+            }
+
             // Wi-Fi Multicast Gateway Discovery
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -1,5 +1,7 @@
 package dev.knxfieldkit.bus
 
+import dev.knxfieldkit.bus.secure.KnxSecureDataCodec
+import dev.knxfieldkit.bus.secure.KnxSecureIpSession
 import dev.knxfieldkit.model.ApciType
 import dev.knxfieldkit.model.BusConnectionConfig
 import dev.knxfieldkit.model.BusTelegram
@@ -12,6 +14,8 @@ import dev.knxfieldkit.model.GroupReadResult
 import dev.knxfieldkit.model.HexBytes
 import dev.knxfieldkit.model.IndividualAddress
 import dev.knxfieldkit.model.IndividualAddressWriteResult
+import dev.knxfieldkit.model.KeyringInterface
+import dev.knxfieldkit.model.KnxKeyring
 import dev.knxfieldkit.model.TelegramPriority
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -92,6 +96,24 @@ class PureKnxNetIpClient(
     private var useNat: Boolean = false
     @Volatile
     private var assignedAddress: IndividualAddress = IndividualAddress(0, 0, 0)
+
+    @Volatile
+    var activeKeyring: KnxKeyring? = null
+        private set
+    @Volatile
+    var activeKeyringInterface: KeyringInterface? = null
+        private set
+    @Volatile
+    var secureIpSession: KnxSecureIpSession? = null
+
+    override fun setKeyring(keyring: KnxKeyring?) {
+        this.activeKeyring = keyring
+    }
+
+    fun setKeyring(keyring: KnxKeyring?, iface: KeyringInterface? = null) {
+        this.activeKeyring = keyring
+        this.activeKeyringInterface = iface
+    }
 
     private var receiveJob: Job? = null
     private var heartbeatJob: Job? = null
@@ -200,6 +222,24 @@ class PureKnxNetIpClient(
         assignedAddress = connectRes.assignedAddress ?: IndividualAddress(0, 0, 0)
         txSeqCounter.set(0)
 
+        val iface = activeKeyringInterface ?: activeKeyring?.interfaces?.firstOrNull()
+        val userPass = config.userPassword ?: iface?.userPasswordHashOrPlain
+        val authCode = config.deviceAuthCode ?: iface?.authCodePlain
+        val keyBytes = when {
+            userPass != null && userPass.length == 32 && userPass.matches(Regex("^[0-9a-fA-F]+$")) -> HexBytes.fromHex(userPass)
+            authCode != null && authCode.length == 32 && authCode.matches(Regex("^[0-9a-fA-F]+$")) -> HexBytes.fromHex(authCode)
+            userPass != null -> java.security.MessageDigest.getInstance("SHA-256").digest(userPass.toByteArray(Charsets.UTF_8)).copyOfRange(0, 16)
+            authCode != null -> java.security.MessageDigest.getInstance("SHA-256").digest(authCode.toByteArray(Charsets.UTF_8)).copyOfRange(0, 16)
+            else -> null
+        }
+        if (keyBytes != null) {
+            secureIpSession = KnxSecureIpSession(
+                sessionId = (connectRes.channelId shl 8) or 0x01,
+                sessionKey = keyBytes,
+                userId = iface?.userId ?: 1,
+            )
+        }
+
         startReceiveLoop(sock, isRouting = false)
         startHeartbeatLoop(sock)
     }
@@ -227,6 +267,15 @@ class PureKnxNetIpClient(
         dataEndpoint = target
         channelId = -1
         assignedAddress = IndividualAddress(0, 0, 0)
+
+        val bbHex = config.backboneKeyHex ?: activeKeyring?.backboneKeyHex
+        if (bbHex != null && bbHex.length == 32 && bbHex.matches(Regex("^[0-9a-fA-F]+$"))) {
+            secureIpSession = KnxSecureIpSession(
+                sessionId = 0x0001,
+                sessionKey = HexBytes.fromHex(bbHex),
+                userId = 0,
+            )
+        }
 
         startReceiveLoop(sock, isRouting = true)
     }
@@ -270,43 +319,59 @@ class PureKnxNetIpClient(
     ) {
         if (bytes.size < 6 || bytes[0] != 0x06.toByte() || bytes[1] != 0x10.toByte()) return
         val serviceType = ((bytes[2].toInt() and 0xFF) shl 8) or (bytes[3].toInt() and 0xFF)
-        when (serviceType) {
+
+        val packetBytes = if (serviceType == KnxSecureIpSession.SERVICE_SECURE_WRAPPER) {
+            val session = secureIpSession
+            if (session != null) {
+                runCatching { session.unwrap(bytes) }.getOrNull() ?: return
+            } else {
+                bytes
+            }
+        } else {
+            bytes
+        }
+
+        if (packetBytes.size < 6 || packetBytes[0] != 0x06.toByte() || packetBytes[1] != 0x10.toByte()) return
+        val effectiveServiceType = ((packetBytes[2].toInt() and 0xFF) shl 8) or (packetBytes[3].toInt() and 0xFF)
+        when (effectiveServiceType) {
             KnxNetIpCodec.SERVICE_TUNNELING_REQUEST -> {
-                if (bytes.size < 11) return
-                val ch = bytes[7].toInt() and 0xFF
-                val seq = bytes[8].toInt() and 0xFF
+                if (packetBytes.size < 11) return
+                val ch = packetBytes[7].toInt() and 0xFF
+                val seq = packetBytes[8].toInt() and 0xFF
                 // Immediately send TUNNELING_ACK per ISO 22510
-                val ack = KnxNetIpCodec.buildTunnelingAck(ch, seq, 0)
+                val rawAck = KnxNetIpCodec.buildTunnelingAck(ch, seq, 0)
+                val ack = secureIpSession?.wrap(rawAck) ?: rawAck
                 val replyTarget = dataEndpoint ?: InetSocketAddress(senderAddr, senderPort)
                 runCatching { sock.send(DatagramPacket(ack, ack.size, replyTarget)) }
 
-                val connHeaderLen = bytes[6].toInt() and 0xFF
+                val connHeaderLen = packetBytes[6].toInt() and 0xFF
                 val cemiStart = 6 + connHeaderLen
-                if (cemiStart < bytes.size) {
-                    val cemi = bytes.copyOfRange(cemiStart, bytes.size)
+                if (cemiStart < packetBytes.size) {
+                    val cemi = packetBytes.copyOfRange(cemiStart, packetBytes.size)
                     processIncomingCemi(cemi)
                 }
             }
 
             KnxNetIpCodec.SERVICE_TUNNELING_ACK -> {
-                if (bytes.size >= 10) {
-                    val seq = bytes[8].toInt() and 0xFF
-                    val status = bytes[9].toInt() and 0xFF
+                if (packetBytes.size >= 10) {
+                    val seq = packetBytes[8].toInt() and 0xFF
+                    val status = packetBytes[9].toInt() and 0xFF
                     pendingTunnelAcks.remove(seq)?.complete(status)
                 }
             }
 
             KnxNetIpCodec.SERVICE_ROUTING_INDICATION -> {
-                if (isRouting && bytes.size > 6) {
-                    val cemi = bytes.copyOfRange(6, bytes.size)
+                if (isRouting && packetBytes.size > 6) {
+                    val cemi = packetBytes.copyOfRange(6, packetBytes.size)
                     processIncomingCemi(cemi)
                 }
             }
 
             KnxNetIpCodec.SERVICE_DISCONNECT_REQUEST -> {
-                if (bytes.size >= 8) {
-                    val ch = bytes[6].toInt() and 0xFF
-                    val resp = KnxNetIpCodec.buildDisconnectResponse(ch, 0)
+                if (packetBytes.size >= 8) {
+                    val ch = packetBytes[6].toInt() and 0xFF
+                    val rawResp = KnxNetIpCodec.buildDisconnectResponse(ch, 0)
+                    val resp = secureIpSession?.wrap(rawResp) ?: rawResp
                     runCatching { sock.send(DatagramPacket(resp, resp.size, senderAddr, senderPort)) }
                     if (ch == channelId) {
                         _connectionState.value = ConnectionState.Disconnected
@@ -317,8 +382,11 @@ class PureKnxNetIpClient(
     }
 
     private fun processIncomingCemi(cemi: ByteArray) {
-        val decoded = KnxNetIpCodec.parseCemiDetailed(cemi, telegramSeq.incrementAndGet()) ?: return
-        val telegram = decoded.telegram
+        val id = telegramSeq.incrementAndGet()
+        val telegram = KnxSecureDataCodec.decodeCemi(cemi, id, activeKeyring)
+            ?: KnxNetIpCodec.parseCemiFrame(cemi, id)
+            ?: return
+        val decoded = KnxNetIpCodec.parseCemiDetailed(cemi, id)
 
         if (telegram.apci == ApciType.GROUP_RESPONSE && telegram.destinationGroup != null) {
             pendingGroupReads[telegram.destinationGroup]?.complete(telegram)
@@ -332,7 +400,7 @@ class PureKnxNetIpClient(
                 progModeCollector.add(telegram.source)
             }
         }
-        if (decoded.apciServiceCode == KnxNetIpCodec.APCI_PROPERTY_VALUE_RESPONSE && telegram.payload.size >= 4) {
+        if (decoded?.apciServiceCode == KnxNetIpCodec.APCI_PROPERTY_VALUE_RESPONSE && telegram.payload.size >= 4) {
             val objIdx = telegram.payload[0].toInt() and 0xFF
             val propId = telegram.payload[1].toInt() and 0xFF
             val propData = telegram.payload.copyOfRange(4, telegram.payload.size)
@@ -362,6 +430,7 @@ class PureKnxNetIpClient(
         controlEndpoint = null
         dataEndpoint = null
         channelId = -1
+        secureIpSession = null
 
         if (sock != null && !sock.isClosed) {
             if (ch >= 0 && ctrl != null) {
@@ -387,7 +456,8 @@ class PureKnxNetIpClient(
                 val ackDeferred = CompletableDeferred<Int>()
                 pendingTunnelAcks[seq] = ackDeferred
                 try {
-                    val pktBytes = KnxNetIpCodec.buildTunnelingRequest(channelId, seq, cemi)
+                    val rawPktBytes = KnxNetIpCodec.buildTunnelingRequest(channelId, seq, cemi)
+                    val pktBytes = secureIpSession?.wrap(rawPktBytes) ?: rawPktBytes
                     sock.send(DatagramPacket(pktBytes, pktBytes.size, dst))
                     val ackStatus = withTimeoutOrNull(1_000L) { ackDeferred.await() }
                     if (ackStatus == null) {
@@ -399,7 +469,8 @@ class PureKnxNetIpClient(
                     pendingTunnelAcks.remove(seq, ackDeferred)
                 }
             } else {
-                val pktBytes = KnxNetIpCodec.buildRoutingIndication(cemi)
+                val rawPktBytes = KnxNetIpCodec.buildRoutingIndication(cemi)
+                val pktBytes = secureIpSession?.wrap(rawPktBytes) ?: rawPktBytes
                 sock.send(DatagramPacket(pktBytes, pktBytes.size, dst))
             }
         }
@@ -411,14 +482,28 @@ class PureKnxNetIpClient(
             pendingGroupReads[address] = deferred
             val startNanos = System.nanoTime()
             try {
-                val cemi = KnxNetIpCodec.buildCemiGroupFrame(
-                    msgCode = KnxNetIpCodec.CEMI_L_DATA_REQ,
-                    src = assignedAddress,
-                    dst = address,
-                    apci = ApciType.GROUP_READ,
-                    payload = ByteArray(0),
-                    compact6Bit = true,
-                )
+                val kr = activeKeyring
+                val keyHex = if (kr != null && kr.isGroupSecure(address)) kr.groupKeysHex[address] else null
+                val cemi = if (keyHex != null) {
+                    KnxSecureDataCodec.encodeSecureGroupTelegram(
+                        source = assignedAddress,
+                        destination = address,
+                        apci = ApciType.GROUP_READ,
+                        payload = ByteArray(0),
+                        compact6Bit = true,
+                        key = HexBytes.fromHex(keyHex),
+                        msgCode = KnxNetIpCodec.CEMI_L_DATA_REQ,
+                    )
+                } else {
+                    KnxNetIpCodec.buildCemiGroupFrame(
+                        msgCode = KnxNetIpCodec.CEMI_L_DATA_REQ,
+                        src = assignedAddress,
+                        dst = address,
+                        apci = ApciType.GROUP_READ,
+                        payload = ByteArray(0),
+                        compact6Bit = true,
+                    )
+                }
                 sendCemiFrame(cemi)
                 val reply = withTimeoutOrNull(timeoutMs) { deferred.await() }
                 val elapsedMs = ((System.nanoTime() - startNanos) / 1_000_000L).coerceAtLeast(1L)
@@ -452,14 +537,28 @@ class PureKnxNetIpClient(
         }
 
     override suspend fun sendGroupWrite(address: GroupAddress, payload: ByteArray, compact6Bit: Boolean) {
-        val cemi = KnxNetIpCodec.buildCemiGroupFrame(
-            msgCode = KnxNetIpCodec.CEMI_L_DATA_REQ,
-            src = assignedAddress,
-            dst = address,
-            apci = ApciType.GROUP_WRITE,
-            payload = payload,
-            compact6Bit = compact6Bit,
-        )
+        val kr = activeKeyring
+        val keyHex = if (kr != null && kr.isGroupSecure(address)) kr.groupKeysHex[address] else null
+        val cemi = if (keyHex != null) {
+            KnxSecureDataCodec.encodeSecureGroupTelegram(
+                source = assignedAddress,
+                destination = address,
+                apci = ApciType.GROUP_WRITE,
+                payload = payload,
+                compact6Bit = compact6Bit,
+                key = HexBytes.fromHex(keyHex),
+                msgCode = KnxNetIpCodec.CEMI_L_DATA_REQ,
+            )
+        } else {
+            KnxNetIpCodec.buildCemiGroupFrame(
+                msgCode = KnxNetIpCodec.CEMI_L_DATA_REQ,
+                src = assignedAddress,
+                dst = address,
+                apci = ApciType.GROUP_WRITE,
+                payload = payload,
+                compact6Bit = compact6Bit,
+            )
+        }
         sendCemiFrame(cemi)
     }
 
