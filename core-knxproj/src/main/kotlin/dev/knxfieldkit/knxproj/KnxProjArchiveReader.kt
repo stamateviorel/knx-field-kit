@@ -17,7 +17,8 @@ data class ExtractedKnxArchive(
     val knxMasterXml: String?,
     val projectXml: String?,
     val zeroXml: String,
-    val hardwareXmlFiles: List<String> = emptyList()
+    val hardwareXmlFiles: List<String> = emptyList(),
+    val keyringXml: String? = null
 )
 
 object KnxProjArchiveReader {
@@ -30,6 +31,8 @@ object KnxProjArchiveReader {
                simpleName == "hardware.xml" ||
                simpleName == "0.xml" ||
                simpleName == "project.xml" ||
+               simpleName == "keyring.xml" ||
+               simpleName.endsWith(".knxkeys") ||
                INNER_PROJECT_ZIP_REGEX.matches(simpleName)
     }
 
@@ -113,14 +116,16 @@ object KnxProjArchiveReader {
                 val zeroXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name == "0.xml" }?.readTextNoBom()
                     ?: throw MalformedProjectException("Missing 0.xml in $projectId")
                 val projectXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name.equals("project.xml", ignoreCase = true) }?.readTextNoBom()
-                return ExtractedKnxArchive(projectId, outerZip.isEncrypted || encrypted, knxMasterXml, projectXml, zeroXml, hardwareXmlFiles)
+                val keyringXml = tmp.walkTopDown().firstOrNull { it.isFile && (it.name.equals("keyring.xml", ignoreCase = true) || it.name.lowercase().endsWith(".knxkeys")) }?.readTextNoBom()
+                return ExtractedKnxArchive(projectId, outerZip.isEncrypted || encrypted, knxMasterXml, projectXml, zeroXml, hardwareXmlFiles, keyringXml)
             }
             val projDir = tmp.listFiles()?.firstOrNull { it.isDirectory && it.name.startsWith("P-", ignoreCase = true) }
             if (projDir != null) {
                 val zeroXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name == "0.xml" }?.readTextNoBom()
                     ?: throw MalformedProjectException("Missing 0.xml in ${knxProjFile.name}")
                 val projectXml = projDir.walkTopDown().firstOrNull { it.isFile && it.name.equals("project.xml", ignoreCase = true) }?.readTextNoBom()
-                return ExtractedKnxArchive(projDir.name, outerZip.isEncrypted, knxMasterXml, projectXml, zeroXml, hardwareXmlFiles)
+                val keyringXml = tmp.walkTopDown().firstOrNull { it.isFile && (it.name.equals("keyring.xml", ignoreCase = true) || it.name.lowercase().endsWith(".knxkeys")) }?.readTextNoBom()
+                return ExtractedKnxArchive(projDir.name, outerZip.isEncrypted, knxMasterXml, projectXml, zeroXml, hardwareXmlFiles, keyringXml)
             }
             throw MalformedProjectException("No P-xxxx project folder or archive found in ${knxProjFile.name}")
         } finally {

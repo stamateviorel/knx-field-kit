@@ -449,11 +449,17 @@ class AppController(
         updatedRecent: List<File>? = null,
     ) {
         simulatedClient.syncWithProject(project)
+        val pKeyring = project.keyring
+        if (pKeyring != null) {
+            simulatedClient.setKeyring(pKeyring)
+            hardwareClient.setKeyring(pKeyring)
+        }
         val firstGa = project.groupAddresses.keys.firstOrNull()?.toString() ?: "1/1/1"
         val firstDev = project.allDevices.keys.firstOrNull()
         _uiState.update {
             it.copy(
                 project = project,
+                keyring = pKeyring ?: it.keyring,
                 projectSourceLabel = label,
                 recentFiles = updatedRecent ?: it.recentFiles,
                 passwordPrompt = null,
@@ -464,7 +470,11 @@ class AppController(
                 deviceStatuses = emptyMap(),
                 lineAuditReport = null,
                 siteCheckReport = null,
-                statusMessage = "Loaded '${project.name}': ${project.allDevices.size} devices, ${project.groupAddresses.size} group addresses",
+                statusMessage = if (pKeyring != null) {
+                    "Loaded '${project.name}': ${project.allDevices.size} devices, ${project.groupAddresses.size} group addresses, Keyring active (${pKeyring.groupKeysHex.size} keys)"
+                } else {
+                    "Loaded '${project.name}': ${project.allDevices.size} devices, ${project.groupAddresses.size} group addresses"
+                },
             )
         }
     }

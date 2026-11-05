@@ -1,6 +1,7 @@
 package dev.knxfieldkit.knxproj
 
 import dev.knxfieldkit.model.GroupAddress
+import dev.knxfieldkit.model.HexBytes
 import dev.knxfieldkit.model.IndividualAddress
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
@@ -9,11 +10,15 @@ import net.lingala.zip4j.model.enums.EncryptionMethod
 import java.io.File
 import java.nio.file.Files
 import java.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class KnxProjReaderTest {
@@ -171,6 +176,171 @@ class KnxProjReaderTest {
             val project = KnxProjParser.openAndParse(outerZipFile, password = password)
             assertTrue(project.passwordProtected)
             assertEquals("Villa Horizon", project.name)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    private fun encryptTestKeyringAttribute(plain16: ByteArray, password: String, created: String): String {
+        val aesKey = EtsCrypto.deriveKeyringAesKey(password)
+        val iv = EtsCrypto.deriveKeyringIv(created)
+        val cipher = Cipher.getInstance("AES/CBC/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(aesKey, "AES"), IvParameterSpec(iv))
+        val encrypted = cipher.doFinal(plain16)
+        return Base64.getEncoder().encodeToString(encrypted)
+    }
+
+    @Test
+    fun parseKeyringXmlDirectlyWithoutFile() {
+        val testPassword = "KeyringSecretPass2026!"
+        val createdTs = "2026-11-05T07:00:00Z"
+        val groupKeyBytes = HexBytes.fromHex("00112233445566778899AABBCCDDEEFF")
+        val toolKeyBytes = HexBytes.fromHex("FFEEDDCCBBAA99887766554433221100")
+
+        val encGroupKey = encryptTestKeyringAttribute(groupKeyBytes, testPassword, createdTs)
+        val encToolKey = encryptTestKeyringAttribute(toolKeyBytes, testPassword, createdTs)
+
+        val xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Keyring xmlns="http://knx.org/xml/keyring/10" Created="$createdTs" Project="SmartHomeSecure">
+              <Group Address="1/1/1" Key="$encGroupKey" />
+              <Device IndividualAddress="1.1.10" ToolKey="$encToolKey" />
+            </Keyring>
+        """.trimIndent()
+
+        val keyring = KnxKeyringReader.parseKeyringXml(xml, testPassword)
+        assertEquals("SmartHomeSecure", keyring.projectName)
+        assertTrue(keyring.isGroupSecure(GroupAddress.parseOrNull("1/1/1")!!))
+        assertEquals("00112233445566778899AABBCCDDEEFF", keyring.groupKeysHex[GroupAddress.parseOrNull("1/1/1")!!])
+        assertTrue(keyring.isDeviceSecure(IndividualAddress.parseOrNull("1.1.10")!!))
+        assertEquals("FFEEDDCCBBAA99887766554433221100", keyring.deviceToolKeysHex[IndividualAddress.parseOrNull("1.1.10")!!])
+    }
+
+    @Test
+    fun detectSecurityOnDevicesAndGroupAddresses() {
+        val secureZeroXml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <KNX xmlns="http://knx.org/xml/project/21" CreatedBy="ETS6" ToolVersion="6.2.0">
+              <Project Id="P-0100">
+                <ProjectInformation Name="Secure Building" GroupAddressStyle="ThreeLevel" />
+                <Installations>
+                  <Installation Name="">
+                    <Topology>
+                      <Area Address="1" Name="Main">
+                        <Line Address="1" Name="Line 1">
+                          <DeviceInstance Id="D-10" Address="10" Name="Plain Switch">
+                            <ComObjectInstanceRefs>
+                              <ComObjectInstanceRef RefId="CO-1" Text="Switch" Links="GA-1" />
+                            </ComObjectInstanceRefs>
+                          </DeviceInstance>
+                          <DeviceInstance Id="D-20" Address="20" Name="Secure Actuator">
+                            <Security SequenceNumber="42" LoadedDeviceAuthenticationCodeHash="hash123" />
+                            <ComObjectInstanceRefs>
+                              <ComObjectInstanceRef RefId="CO-2" Text="Relay" Links="GA-2" />
+                            </ComObjectInstanceRefs>
+                          </DeviceInstance>
+                        </Line>
+                      </Area>
+                    </Topology>
+                    <GroupAddresses>
+                      <GroupRanges>
+                        <GroupRange Name="All" RangeStart="1" RangeEnd="65535">
+                          <GroupAddress Id="P-0100-0_GA-1" Address="2561" Name="Plain Light" />
+                          <GroupAddress Id="P-0100-0_GA-2" Address="2562" Name="Secure Light From CO" />
+                          <GroupAddress Id="P-0100-0_GA-3" Address="2563" Name="Secured GA By Mode" SecurityMode="Secured" />
+                          <GroupAddress Id="P-0100-0_GA-4" Address="2564" Name="Secured GA By Element">
+                            <Security SequenceNumber="1" />
+                          </GroupAddress>
+                        </GroupRange>
+                      </GroupRanges>
+                    </GroupAddresses>
+                  </Installation>
+                </Installations>
+              </Project>
+            </KNX>
+        """.trimIndent()
+
+        val archive = ExtractedKnxArchive(
+            projectId = "P-0100",
+            passwordProtected = false,
+            knxMasterXml = null,
+            projectXml = null,
+            zeroXml = secureZeroXml,
+        )
+
+        val project = KnxProjParser.parseArchive(archive)
+        val devPlain = project.findDevice(IndividualAddress(1, 1, 10))
+        val devSecure = project.findDevice(IndividualAddress(1, 1, 20))
+
+        assertNotNull(devPlain)
+        assertFalse(devPlain.isSecure)
+
+        assertNotNull(devSecure)
+        assertTrue(devSecure.isSecure)
+
+        // GA-1: Plain Light -> false
+        val ga1 = project.findGroupAddress(GroupAddress.fromRaw(2561))
+        assertNotNull(ga1)
+        assertFalse(ga1.isSecure)
+
+        // GA-2: Linked to Secure Actuator (D-20) -> true
+        val ga2 = project.findGroupAddress(GroupAddress.fromRaw(2562))
+        assertNotNull(ga2)
+        assertTrue(ga2.isSecure)
+
+        // GA-3: SecurityMode="Secured" -> true
+        val ga3 = project.findGroupAddress(GroupAddress.fromRaw(2563))
+        assertNotNull(ga3)
+        assertTrue(ga3.isSecure)
+
+        // GA-4: Has <Security> child element -> true
+        val ga4 = project.findGroupAddress(GroupAddress.fromRaw(2564))
+        assertNotNull(ga4)
+        assertTrue(ga4.isSecure)
+    }
+
+    @Test
+    fun extractAndParseKeyringInsideArchive() {
+        val tempDir = Files.createTempDirectory("knxproj-keyring-").toFile()
+        try {
+            val testPassword = "ArchiveKeyringPass123"
+            val createdTs = "2026-11-05T07:30:00Z"
+            val groupKeyBytes = HexBytes.fromHex("A1B2C3D4E5F60718293A4B5C6D7E8F90")
+            val encGroupKey = encryptTestKeyringAttribute(groupKeyBytes, testPassword, createdTs)
+
+            val keyringXmlContent = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <Keyring xmlns="http://knx.org/xml/keyring/10" Created="$createdTs" Project="ArchiveProject">
+                  <Group Address="1/2/1" Key="$encGroupKey" />
+                </Keyring>
+            """.trimIndent()
+
+            val zeroFile = File(tempDir, "0.xml").apply { writeText(sampleZeroXml) }
+            val keyringFile = File(tempDir, "keyring.xml").apply { writeText(keyringXmlContent) }
+            val knxProjFile = File(tempDir, "project_with_keyring.knxproj")
+
+            val projDir = File(tempDir, "P-0100").apply { mkdirs() }
+            zeroFile.copyTo(File(projDir, "0.xml"))
+            keyringFile.copyTo(File(projDir, "keyring.xml"))
+
+            ZipFile(knxProjFile).use { zf ->
+                zf.addFolder(projDir)
+            }
+
+            val archive = KnxProjArchiveReader.extract(knxProjFile)
+            assertNotNull(archive.keyringXml)
+            assertTrue(archive.keyringXml.contains("<Keyring"))
+
+            val project = KnxProjParser.openAndParse(knxProjFile, password = testPassword)
+            assertNotNull(project.keyring)
+            assertEquals("ArchiveProject", project.keyring?.projectName)
+            assertTrue(project.keyring?.isGroupSecure(GroupAddress.parseOrNull("1/2/1")!!) == true)
+            assertEquals("A1B2C3D4E5F60718293A4B5C6D7E8F90", project.keyring?.groupKeysHex?.get(GroupAddress.parseOrNull("1/2/1")!!))
+
+            // Group Address 1/2/1 should have isSecure = true
+            val ga1 = project.findGroupAddress(GroupAddress.parseOrNull("1/2/1")!!)
+            assertNotNull(ga1)
+            assertTrue(ga1.isSecure)
         } finally {
             tempDir.deleteRecursively()
         }

@@ -41,10 +41,20 @@ private fun Element.directChildElements(tagName: String? = null): List<Element> 
 object KnxProjParser {
     fun openAndParse(knxProjFile: File, password: String? = null): KnxProject {
         val archive = KnxProjArchiveReader.extract(knxProjFile, password)
-        return parseArchive(archive)
+        return parseArchive(archive, password)
     }
 
-    fun parseArchive(archive: ExtractedKnxArchive): KnxProject {
+    fun parse(archive: ExtractedKnxArchive, password: String? = null): KnxProject = parseArchive(archive, password)
+
+    fun parseArchive(archive: ExtractedKnxArchive, password: String? = null): KnxProject {
+        val parsedKeyring: KnxKeyring? = if (archive.keyringXml != null && !password.isNullOrBlank()) {
+            try {
+                KnxKeyringReader.parseKeyringXml(archive.keyringXml, password)
+            } catch (_: Exception) {
+                null
+            }
+        } else null
+
         val manufacturerNames = parseManufacturerNames(archive.knxMasterXml)
         val productCatalog = parseProductCatalog(archive.hardwareXmlFiles)
 
@@ -81,12 +91,16 @@ object KnxProjParser {
             val name = gaEl.getAttribute("Name")
             val desc = gaEl.getAttribute("Description")
             val dpt = DptCodec.normalizeDptId(gaEl.getAttribute("DatapointType"))
+            val hasDirectSec = gaEl.getAttribute("SecurityMode").equals("Secured", ignoreCase = true) ||
+                gaEl.getElementsByTagName("Security").elements().isNotEmpty() ||
+                (parsedKeyring?.isGroupSecure(ga) == true)
             gaByRaw[ga] = GroupAddressInfo(
                 address = ga,
                 name = name,
                 description = desc,
                 dpt = dpt,
                 linkedObjects = emptyList(),
+                isSecure = hasDirectSec,
             )
             if (id.isNotEmpty()) {
                 gaKeyToAddress[id] = ga
@@ -121,6 +135,15 @@ object KnxProjParser {
                     if (devId.isNotEmpty()) {
                         deviceIdToAddress[devId] = ia
                     }
+
+                    val secElements = devEl.getElementsByTagName("Security").elements()
+                    val hasSecurity = secElements.any { secEl ->
+                        secEl.attributes.length > 0 ||
+                        secEl.hasAttribute("SequenceNumber") ||
+                        secEl.hasAttribute("LoadedDeviceAuthenticationCodeHash") ||
+                        secEl.hasAttribute("LoadedDeviceManagementPasswordHash")
+                    } || devEl.getAttribute("SecurityMode").equals("Secured", ignoreCase = true) ||
+                       (parsedKeyring?.isDeviceSecure(ia) == true)
 
                     val prodRef = devEl.getAttribute("ProductRefId").trim()
                     val mfrId = prodRef.substringBefore('_', "")
@@ -169,6 +192,7 @@ object KnxProjParser {
                             gaByRaw[ga] = existing.copy(
                                 dpt = existing.dpt ?: coDpt,
                                 linkedObjects = existing.linkedObjects + linkObj,
+                                isSecure = existing.isSecure || hasSecurity,
                             )
                         }
                         devComObjects += DeviceComObject(
@@ -189,6 +213,10 @@ object KnxProjParser {
                         val rk = dr.getAttribute("GroupAddressRefId").trim()
                         val ga = gaKeyToAddress[rk] ?: gaKeyToAddress[rk.substringAfter('_', rk)] ?: continue
                         devLinkedGas += ga
+                        val existing = gaByRaw[ga]
+                        if (existing != null && hasSecurity) {
+                            gaByRaw[ga] = existing.copy(isSecure = true)
+                        }
                     }
 
                     val devName = devEl.getAttribute("Name").ifBlank { prodName.ifBlank { "Device $ia" } }
@@ -203,6 +231,7 @@ object KnxProjParser {
                         maskVersion = devEl.getAttribute("MaskVersion").takeIf { it.isNotBlank() },
                         groupAddresses = devLinkedGas.toList(),
                         comObjects = devComObjects.sortedBy { it.number },
+                        isSecure = hasSecurity,
                     )
                 }
 
@@ -233,6 +262,15 @@ object KnxProjParser {
             }
         }
 
+        if (parsedKeyring != null) {
+            for ((ga, _) in parsedKeyring.groupKeysHex) {
+                val existing = gaByRaw[ga]
+                if (existing != null && !existing.isSecure) {
+                    gaByRaw[ga] = existing.copy(isSecure = true)
+                }
+            }
+        }
+
         return KnxProject(
             projectId = projectId,
             name = projectName,
@@ -243,6 +281,7 @@ object KnxProjParser {
             groupAddresses = gaByRaw,
             groupRanges = groupRanges,
             locations = locations,
+            keyring = parsedKeyring,
         )
     }
 
@@ -390,8 +429,8 @@ object KnxProjParser {
 }
 
 object KnxKeyringReader {
-    fun parseKeyring(knxKeysFile: File, password: String): KnxKeyring {
-        val doc = parseXmlSafe(knxKeysFile.readText(Charsets.UTF_8))
+    fun parseKeyringXml(xmlString: String, password: String, fallbackProjectName: String = "Keyring"): KnxKeyring {
+        val doc = parseXmlSafe(xmlString)
         val root = doc.getElementsByTagName("Keyring").elements().firstOrNull() ?: doc.documentElement
         val created = root.getAttribute("Created")
         val aesKey = EtsCrypto.deriveKeyringAesKey(password)
@@ -433,12 +472,19 @@ object KnxKeyringReader {
         }
 
         return KnxKeyring(
-            projectName = root.getAttribute("Project").ifBlank { knxKeysFile.nameWithoutExtension },
+            projectName = root.getAttribute("Project").ifBlank { fallbackProjectName },
             createdBy = root.getAttribute("CreatedBy"),
             backboneKeyHex = backboneHex,
             interfaces = interfaces,
             groupKeysHex = groupKeysHex,
             deviceToolKeysHex = deviceToolKeysHex,
         )
+    }
+
+    fun parseKeyringXml(xmlString: String, password: String): KnxKeyring =
+        parseKeyringXml(xmlString, password, "Keyring")
+
+    fun parseKeyring(knxKeysFile: File, password: String): KnxKeyring {
+        return parseKeyringXml(knxKeysFile.readText(Charsets.UTF_8), password, knxKeysFile.nameWithoutExtension)
     }
 }

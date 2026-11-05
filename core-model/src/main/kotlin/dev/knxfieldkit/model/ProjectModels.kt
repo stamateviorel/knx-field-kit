@@ -145,6 +145,7 @@ data class KnxProject(
     val groupAddresses: Map<GroupAddress, GroupAddressInfo> = emptyMap(),
     val groupRanges: List<GroupRangeNode> = emptyList(),
     val locations: List<BuildingLocation> = emptyList(),
+    val keyring: KnxKeyring? = null,
 ) {
     val allLines: List<TopologyLine> by lazy { areas.flatMap { it.lines } }
     val allDevices: Map<IndividualAddress, ProjectDevice> by lazy {

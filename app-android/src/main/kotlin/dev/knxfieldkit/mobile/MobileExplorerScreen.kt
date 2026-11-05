@@ -207,7 +207,16 @@ fun MobileExplorerScreen(
     var buildingViewMode by remember { mutableStateOf(BuildingViewMode.TREE) }
     var expandedTreeIds by remember(project) {
         mutableStateOf(
-            project?.locations?.firstOrNull()?.let { setOf(it.name) } ?: emptySet()
+            project?.locations?.firstOrNull()?.let { bld ->
+                val set = mutableSetOf(bld.name)
+                bld.children.firstOrNull()?.let { part ->
+                    set += "${bld.name}/${part.name}"
+                    part.children.firstOrNull()?.let { floor ->
+                        set += "${bld.name}/${part.name}/${floor.name}"
+                    }
+                }
+                set
+            } ?: emptySet()
         )
     }
     var groupViewMode by remember { mutableStateOf(GroupViewMode.TREE) }
@@ -1215,96 +1224,29 @@ fun MobileExplorerScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        item(key = "group-tree-toolbar") {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                        item(key = "group-tree-header") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
+                                Text(
+                                    text = "ETS GROUP ADDRESSES (${ranges.size} Main Groups • ${project.groupAddresses.size} GAs)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                FilledTonalButton(
+                                    onClick = { controller.pollAllProjectGroupAddresses() },
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
+                                    modifier = Modifier.height(24.dp),
                                 ) {
-                                    Text(
-                                        text = "ETS GROUP TREE (${ranges.size} Main • ${project.groupAddresses.size} GAs)",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        AssistChip(
-                                            onClick = {
-                                                val all = mutableSetOf<String>()
-                                                for (mr in ranges) {
-                                                    all += mr.id
-                                                    mr.children.forEach { all += it.id }
-                                                }
-                                                expandedGroupIds = all
-                                            },
-                                            label = { Text("Expand All", fontSize = 9.5.sp) },
-                                            leadingIcon = { Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(12.dp)) },
-                                            modifier = Modifier.height(26.dp),
-                                        )
-                                        AssistChip(
-                                            onClick = { expandedGroupIds = emptySet() },
-                                            label = { Text("Collapse", fontSize = 9.5.sp) },
-                                            leadingIcon = { Icon(Icons.Default.UnfoldLess, null, modifier = Modifier.size(12.dp)) },
-                                            modifier = Modifier.height(26.dp),
-                                        )
-                                    }
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    // View Mode Toggle
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    ) {
-                                        Row(modifier = Modifier.padding(2.dp)) {
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = MaterialTheme.colorScheme.primary,
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                ) {
-                                                    Icon(Icons.Default.AccountTree, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onPrimary)
-                                                    Text("Tree View", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-                                                }
-                                            }
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = Color.Transparent,
-                                                modifier = Modifier.clickable { groupViewMode = GroupViewMode.FOLDERS },
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                ) {
-                                                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                    Text("Folders", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    FilledTonalButton(
-                                        onClick = { controller.pollAllProjectGroupAddresses() },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                        modifier = Modifier.height(28.dp),
-                                    ) {
-                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(13.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Poll All GAs", style = MaterialTheme.typography.labelSmall)
-                                    }
+                                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(11.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("Poll All GAs", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -1577,98 +1519,6 @@ fun MobileExplorerScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        item(key = "tree-toolbar") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    AssistChip(
-                                        onClick = {
-                                            val all = mutableSetOf<String>()
-                                            fun collect(loc: BuildingLocation, prefix: String) {
-                                                val path = if (prefix.isEmpty()) loc.name else "$prefix/${loc.name}"
-                                                all += path
-                                                loc.functions.forEach { all += "$path/fn:${it.id}" }
-                                                loc.children.forEach { collect(it, path) }
-                                            }
-                                            project.locations.forEach { collect(it, "") }
-                                            expandedTreeIds = all
-                                        },
-                                        label = { Text("Expand All", fontSize = 9.5.sp) },
-                                        leadingIcon = { Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(12.dp)) },
-                                        modifier = Modifier.height(26.dp),
-                                    )
-                                    AssistChip(
-                                        onClick = { expandedTreeIds = emptySet() },
-                                        label = { Text("Collapse", fontSize = 9.5.sp) },
-                                        leadingIcon = { Icon(Icons.Default.UnfoldLess, null, modifier = Modifier.size(12.dp)) },
-                                        modifier = Modifier.height(26.dp),
-                                    )
-                                }
-
-                                // View Mode Toggle
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                ) {
-                                    Row(modifier = Modifier.padding(2.dp)) {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (buildingViewMode == BuildingViewMode.TREE) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                            modifier = Modifier.clickable { buildingViewMode = BuildingViewMode.TREE },
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.AccountTree,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(13.dp),
-                                                    tint = if (buildingViewMode == BuildingViewMode.TREE) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                                Text(
-                                                    "Tree",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = if (buildingViewMode == BuildingViewMode.TREE) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (buildingViewMode == BuildingViewMode.TREE) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (buildingViewMode == BuildingViewMode.CARDS) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                            modifier = Modifier.clickable { buildingViewMode = BuildingViewMode.CARDS },
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.FolderOpen,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(13.dp),
-                                                    tint = if (buildingViewMode == BuildingViewMode.CARDS) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                                Text(
-                                                    "Folders",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = if (buildingViewMode == BuildingViewMode.CARDS) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (buildingViewMode == BuildingViewMode.CARDS) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         if (visibleTreeNodes.isEmpty()) {
                             item(key = "empty-tree") {
                                 OutlinedCard(
@@ -1773,48 +1623,6 @@ fun MobileExplorerScreen(
                     }
 
                     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            ) {
-                                Row(modifier = Modifier.padding(2.dp)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = if (buildingViewMode == BuildingViewMode.TREE) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                        modifier = Modifier.clickable { buildingViewMode = BuildingViewMode.TREE },
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        ) {
-                                            Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(13.dp))
-                                            Text("Tree View", style = MaterialTheme.typography.labelSmall)
-                                        }
-                                    }
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = if (buildingViewMode == BuildingViewMode.CARDS) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                        modifier = Modifier.clickable { buildingViewMode = BuildingViewMode.CARDS },
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        ) {
-                                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(13.dp))
-                                            Text("Folders", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         MobileBreadcrumbBar(
                             crumbs = listOf("Buildings") + locationPath.map { it.name },
                             onBack = { locationPath = locationPath.dropLast(1) },
@@ -2072,42 +1880,6 @@ fun MobileExplorerScreen(
                                         fontFamily = FontFamily.Monospace,
                                         color = MaterialTheme.colorScheme.primary,
                                     )
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                ) {
-                                    Row(modifier = Modifier.padding(2.dp)) {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (buildingViewMode == BuildingViewMode.TREE) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                            modifier = Modifier.clickable { buildingViewMode = BuildingViewMode.TREE },
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            ) {
-                                                Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(13.dp))
-                                                Text("Tree View", style = MaterialTheme.typography.labelSmall)
-                                            }
-                                        }
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (buildingViewMode == BuildingViewMode.CARDS) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                            modifier = Modifier.clickable { buildingViewMode = BuildingViewMode.CARDS },
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            ) {
-                                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(13.dp))
-                                                Text("Folders", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -3080,7 +2852,7 @@ private fun buildVisibleBuildingTree(
     ) {
         val currentPath = parentPath + loc
         val nodeId = currentPath.joinToString("/") { it.name }
-        val isExpanded = nodeId in expandedIds
+        val isExpanded = nodeId in expandedIds || loc.name in expandedIds
         val isBuilding = depth == 0 && (loc.type.equals("Building", ignoreCase = true) || loc.type.equals("BuildingPart", ignoreCase = true))
 
         if (isBuilding) {
@@ -3283,7 +3055,7 @@ private fun BuildingTreeSpaceItem(
         isPart -> Icons.Default.Domain
         isFloor -> Icons.Default.Layers
         isRoom -> Icons.Default.MeetingRoom
-        isBoard -> Icons.Default.Router
+        isBoard -> Icons.Default.DeveloperBoard
         loc.type.contains("Corridor", ignoreCase = true) || loc.name.contains("Corridor", ignoreCase = true) || loc.name.contains("Hall", ignoreCase = true) ->
             Icons.AutoMirrored.Filled.DirectionsWalk
         loc.type.contains("Stair", ignoreCase = true) || loc.name.contains("Stair", ignoreCase = true) ->
@@ -3338,8 +3110,13 @@ private fun BuildingTreeSpaceItem(
                         shape = RoundedCornerShape(4.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                     ) {
+                        val badgeText = when {
+                            isBoard || loc.type.equals("DistributionBoard", ignoreCase = true) -> "CABINET"
+                            isPart || loc.type.equals("BuildingPart", ignoreCase = true) -> "PART"
+                            else -> loc.type.uppercase()
+                        }
                         Text(
-                            text = loc.type.uppercase(),
+                            text = badgeText,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3533,8 +3310,26 @@ private fun BuildingTreeFunctionItem(
         linkedGas.firstOrNull { ga -> DptCodec.resolveMainDpt(ga.dpt) == MainDpt.DPT_9_FLOAT || ga.name.contains("temp", ignoreCase = true) || ga.name.contains("sollwert", ignoreCase = true) }
     } else null
 
+    val switchStatusGa = remember(linkedGas) {
+        linkedGas.firstOrNull { ga ->
+            val nameL = ga.name.lowercase()
+            (nameL.contains("status") || nameL.contains("rück")) &&
+                (nameL.contains("schalt") || nameL.contains("switch") || DptCodec.resolveMainDpt(ga.dpt) == MainDpt.DPT_1_BOOL) &&
+                !nameL.contains("absolut") && !nameL.contains("dimm") && !nameL.contains("wert") && !nameL.contains("%")
+        }
+    }
+
+    val dimStatusGa = remember(linkedGas) {
+        linkedGas.firstOrNull { ga ->
+            val nameL = ga.name.lowercase()
+            (nameL.contains("status") || nameL.contains("rück")) &&
+                (nameL.contains("dimm") || nameL.contains("absolut") || nameL.contains("wert") || nameL.contains("hellig") || nameL.contains("bright") || nameL.contains("%") ||
+                    DptCodec.resolveMainDpt(ga.dpt) == MainDpt.DPT_5_PERCENT || DptCodec.resolveMainDpt(ga.dpt) == MainDpt.DPT_5_UNSIGNED)
+        }
+    }
+
     val statusGa = remember(linkedGas) {
-        linkedGas.firstOrNull { ga -> ga.name.contains("status", ignoreCase = true) || ga.name.contains("rückmeldung", ignoreCase = true) }
+        switchStatusGa ?: dimStatusGa ?: linkedGas.firstOrNull { ga -> ga.name.contains("status", ignoreCase = true) || ga.name.contains("rückmeldung", ignoreCase = true) }
     }
 
     val isFunctionSecure = remember(linkedGas, state.keyring) {
@@ -3637,7 +3432,7 @@ private fun BuildingTreeFunctionItem(
                     ) {
                         if (primarySwitchGa != null) {
                             val swText = primarySwitchGa.address.toString()
-                            val swLiveVal = (statusGa ?: primarySwitchGa).let { state.groupLiveValues[it.address]?.valueText }
+                            val swLiveVal = (switchStatusGa ?: primarySwitchGa).let { state.groupLiveValues[it.address]?.valueText }
                             val isSwOn = swLiveVal?.equals("ON", ignoreCase = true) == true || swLiveVal?.contains("1") == true
 
                             FilledTonalButton(
@@ -3743,7 +3538,7 @@ private fun BuildingTreeFunctionItem(
                 // If Dimmer: Direct Integrated Dimmer Slider and Preset Strip!
                 if (primaryDimmerGa != null) {
                     val dimText = primaryDimmerGa.address.toString()
-                    val dimLiveVal = (statusGa ?: primaryDimmerGa).let { state.groupLiveValues[it.address]?.valueText }
+                    val dimLiveVal = (dimStatusGa ?: primaryDimmerGa).let { state.groupLiveValues[it.address]?.valueText }
                     val livePct = remember(dimLiveVal) {
                         dimLiveVal?.replace("%", "")?.trim()?.toDoubleOrNull()?.toFloat() ?: 0f
                     }
@@ -3961,11 +3756,13 @@ fun EtsGaInlineControlBar(
         nameLower.contains("absolut") || nameLower.contains("position") || nameLower.contains("prozent") ||
         nameLower.contains("percent") || nameLower.contains("scale") || nameLower.contains("stufe")
 
+    val isStatusFeedback = nameLower.contains("status") || nameLower.contains("rück")
+
     val isRelativeDimmer = isDpt3 || (hasDimKeyword && (nameLower.contains("relativ") || nameLower.contains("schritt") || nameLower.contains("step") || nameLower.contains("4-bit") || nameLower.contains("4 bit")))
 
-    val isAbsoluteDimmer = !isRelativeDimmer && (isDpt5 || (hasDimKeyword && !nameLower.contains("schalt") && !nameLower.contains("switch") && !nameLower.contains("status")) || nameLower.contains("absolut") || nameLower.contains("position") || nameLower.contains("prozent") || nameLower.contains("percent"))
+    val isAbsoluteDimmer = !isRelativeDimmer && !isStatusFeedback && (isDpt5 || (hasDimKeyword && !nameLower.contains("schalt") && !nameLower.contains("switch")) || nameLower.contains("absolut") || nameLower.contains("position") || nameLower.contains("prozent") || nameLower.contains("percent"))
 
-    val isSwitch = !isAbsoluteDimmer && !isRelativeDimmer &&
+    val isSwitch = !isAbsoluteDimmer && !isRelativeDimmer && !isStatusFeedback &&
         ((mainDpt == MainDpt.DPT_1_BOOL || nameLower.contains("schalt") || nameLower.contains("switch") || nameLower.contains("ein/aus") || nameLower.contains("on/off")) &&
         !nameLower.contains("blind") && !nameLower.contains("jalousie") && !nameLower.contains("rollladen") &&
         !nameLower.contains("shutter") && !nameLower.contains("auf/ab") && !nameLower.contains("up/down") &&
@@ -4506,21 +4303,26 @@ fun MobileRoomFunctionCard(
     val primaryDimmerGa = remember(allGas) {
         allGas.firstOrNull { ga ->
             val d = DptCodec.resolveMainDpt(ga.dpt)
-            d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED ||
-                ga.dpt?.contains("5.001") == true || ga.dpt?.contains("5.004") == true ||
-                ga.name.contains("Dimmwert", ignoreCase = true) ||
-                ga.name.contains("Helligkeit", ignoreCase = true) ||
-                ga.name.contains("Brightness", ignoreCase = true) ||
-                ga.name.contains("Value", ignoreCase = true) ||
-                ga.name.contains("Wert", ignoreCase = true) ||
-                ga.name.contains("%")
+            val nameL = ga.name.lowercase()
+            !nameL.contains("status") && !nameL.contains("rück") &&
+                (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED ||
+                    ga.dpt?.contains("5.001") == true || ga.dpt?.contains("5.004") == true ||
+                    ga.name.contains("Dimmwert", ignoreCase = true) ||
+                    ga.name.contains("Helligkeit", ignoreCase = true) ||
+                    ga.name.contains("Brightness", ignoreCase = true) ||
+                    ga.name.contains("Value", ignoreCase = true) ||
+                    ga.name.contains("Wert", ignoreCase = true) ||
+                    ga.name.contains("Absolut", ignoreCase = true) ||
+                    ga.name.contains("%"))
         }
     }
     val primarySwitchGa = remember(allGas) {
         allGas.firstOrNull { ga ->
             val d = DptCodec.resolveMainDpt(ga.dpt)
-            (d == MainDpt.DPT_1_BOOL || ga.name.contains("Schalt", ignoreCase = true) || ga.name.contains("Switch", ignoreCase = true)) &&
-                !ga.name.contains("Blind", ignoreCase = true) && !ga.name.contains("Jalousie", ignoreCase = true)
+            val nameL = ga.name.lowercase()
+            !nameL.contains("status") && !nameL.contains("rück") &&
+                (d == MainDpt.DPT_1_BOOL || nameL.contains("schalt") || nameL.contains("switch")) &&
+                !nameL.contains("blind") && !nameL.contains("jalousie")
         }
     }
 
@@ -5009,8 +4811,10 @@ private fun MobileRoomCockpitCard(
     val dimmerGas = remember(groupAddresses) {
         groupAddresses.filter {
             val d = DptCodec.resolveMainDpt(it.dpt)
-            (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED || it.name.contains("Dimmen", ignoreCase = true)) &&
-                !it.name.contains("Status", ignoreCase = true)
+            val nameL = it.name.lowercase()
+            !nameL.contains("status") && !nameL.contains("rück") &&
+                (d == MainDpt.DPT_5_PERCENT || d == MainDpt.DPT_5_UNSIGNED ||
+                    nameL.contains("dimm") || nameL.contains("absolut") || nameL.contains("wert") || nameL.contains("bright") || nameL.contains("%"))
         }
     }
 

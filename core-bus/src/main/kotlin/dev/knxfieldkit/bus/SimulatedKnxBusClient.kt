@@ -890,20 +890,18 @@ class SimulatedKnxBusClient(
         payload: ByteArray,
     ) {
         val kr = activeKeyring
-        val isSecure = dstGroup != null && kr != null && kr.isGroupSecure(dstGroup)
-        val rawHex = if (dstGroup != null && isSecure) {
-            val keyHex = kr?.groupKeysHex?.get(dstGroup)
-            if (keyHex != null && keyHex.length == 32) {
-                val cemi = dev.knxfieldkit.bus.secure.KnxSecureDataCodec.encodeSecureGroupTelegram(
-                    source = source,
-                    destination = dstGroup,
-                    apci = apci,
-                    payload = payload,
-                    compact6Bit = payload.size == 1 && (payload[0].toInt() and 0xFF) <= 0x3F,
-                    key = HexBytes.fromHex(keyHex),
-                )
-                HexBytes.toHex(cemi)
-            } else ""
+        val groupKey = if (kr != null && dstGroup != null && kr.isGroupSecure(dstGroup)) kr.groupKeysHex[dstGroup] else null
+        val isSecure = groupKey != null && groupKey.length == 32
+        val rawHex = if (isSecure && dstGroup != null) {
+            val cemi = dev.knxfieldkit.bus.secure.KnxSecureDataCodec.encodeSecureGroupTelegram(
+                source = source,
+                destination = dstGroup,
+                apci = apci,
+                payload = payload,
+                compact6Bit = payload.size == 1 && (payload[0].toInt() and 0xFF) <= 0x3F,
+                key = HexBytes.fromHex(groupKey),
+            )
+            HexBytes.toHex(cemi)
         } else ""
 
         _incomingTelegrams.tryEmit(
