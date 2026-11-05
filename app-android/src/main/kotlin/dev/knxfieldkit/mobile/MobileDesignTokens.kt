@@ -98,7 +98,7 @@ val MobileLightPalette = MobileColorScheme(
     isDark = false,
 )
 
-const val APP_VERSION = "v3.15"
+const val APP_VERSION = "v3.16"
 
 val LocalMobileColors = staticCompositionLocalOf { MobileDarkPalette }
 

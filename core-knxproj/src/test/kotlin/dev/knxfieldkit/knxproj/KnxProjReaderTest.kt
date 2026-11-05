@@ -347,6 +347,124 @@ class KnxProjReaderTest {
     }
 
     @Test
+    fun testEtsSequenceNumberTrapDoesNotMarkPlainDevicesSecure() {
+        val testXml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <KNX xmlns="http://knx.org/xml/project/23" CreatedBy="ETS6" ToolVersion="6.2.0">
+              <Project Id="P-0999">
+                <ProjectInformation Name="SequenceTrapTest" GroupAddressStyle="ThreeLevel" />
+                <Installations>
+                  <Installation Name="">
+                    <Topology>
+                      <Area Address="1" Name="Area 1">
+                        <Line Address="1" Name="Line 1.1">
+                          <!-- D-1: Plain device with ETS download sequence counter; must NOT be secure -->
+                          <DeviceInstance Id="D-1" Address="1" Name="Plain Downloaded Switch">
+                            <Security SequenceNumber="0" SequenceNumberTimestamp="2024-01-18T13:04:19Z" />
+                            <ComObjectInstanceRefs>
+                              <ComObjectInstanceRef RefId="CO-1" Text="Switch" Links="GA-1" />
+                            </ComObjectInstanceRefs>
+                          </DeviceInstance>
+                          <!-- D-2: Genuine KNX Secure device with DAC hash; must be secure -->
+                          <DeviceInstance Id="D-2" Address="2" Name="Secure Gateway">
+                            <Security SequenceNumber="0" LoadedDeviceAuthenticationCodeHash="F2e/nG33kpvmyxuHCHQkxA==" />
+                            <ComObjectInstanceRefs>
+                              <ComObjectInstanceRef RefId="CO-2" Text="Relay" Links="GA-2" />
+                            </ComObjectInstanceRefs>
+                          </DeviceInstance>
+                          <!-- D-3: Plain dummy device with empty security tag; must NOT be secure -->
+                          <DeviceInstance Id="D-3" Address="3" Name="Dummy Plain">
+                            <Security />
+                          </DeviceInstance>
+                        </Line>
+                      </Area>
+                    </Topology>
+                    <GroupAddresses>
+                      <GroupRanges>
+                        <GroupRange Name="All" RangeStart="1" RangeEnd="65535">
+                          <GroupAddress Id="P-0999_GA-1" Address="2305" Name="Plain Light (1/1/1)" />
+                          <GroupAddress Id="P-0999_GA-2" Address="2306" Name="Secure Light (1/1/2)" />
+                        </GroupRange>
+                      </GroupRanges>
+                    </GroupAddresses>
+                  </Installation>
+                </Installations>
+              </Project>
+            </KNX>
+        """.trimIndent()
+
+        val project = KnxProjParser.parseArchive(
+            ExtractedKnxArchive(
+                projectId = "P-0999",
+                passwordProtected = false,
+                knxMasterXml = null,
+                projectXml = null,
+                zeroXml = testXml,
+            )
+        )
+
+        val dev1 = project.findDevice(IndividualAddress(1, 1, 1))
+        val dev2 = project.findDevice(IndividualAddress(1, 1, 2))
+        val dev3 = project.findDevice(IndividualAddress(1, 1, 3))
+
+        assertNotNull(dev1)
+        assertFalse(dev1.isSecure, "Device with SequenceNumber alone must NOT be secure")
+
+        assertNotNull(dev2)
+        assertTrue(dev2.isSecure, "Device with LoadedDeviceAuthenticationCodeHash must be secure")
+
+        assertNotNull(dev3)
+        assertFalse(dev3.isSecure, "Device with empty Security element must NOT be secure")
+
+        val ga1 = project.findGroupAddress(GroupAddress.fromRaw(2305))
+        val ga2 = project.findGroupAddress(GroupAddress.fromRaw(2306))
+
+        assertNotNull(ga1)
+        assertFalse(ga1.isSecure, "GA connected to plain downloaded device must remain plain")
+
+        assertNotNull(ga2)
+        assertTrue(ga2.isSecure, "GA connected to secure device ComObject must inherit security")
+    }
+
+    @Test
+    fun testOfficialKnxKeyringXmlSchemaWithContainerAndIntegerRawAddresses() {
+        val testPassword = "KeyringPassword2026"
+        val createdTs = "2026-11-05T08:00:00Z"
+        val groupKeyBytes = HexBytes.fromHex("11223344556677889900AABBCCDDEEFF")
+        val toolKeyBytes = HexBytes.fromHex("FEDCBA9876543210FEDCBA9876543210")
+        val encGroupKey = encryptTestKeyringAttribute(groupKeyBytes, testPassword, createdTs)
+        val encToolKey = encryptTestKeyringAttribute(toolKeyBytes, testPassword, createdTs)
+
+        // Standard official ETS Keyring schema uses <GroupAddresses><GroupAddress Address="2305" Key="..."/></GroupAddresses>
+        val officialKeyringXml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Keyring xmlns="http://knx.org/xml/keyring/1" Created="$createdTs" Project="OfficialSchemaProject">
+              <Devices>
+                <Device IndividualAddress="1.1.50" ToolKey="$encToolKey" SequenceNumber="0" />
+              </Devices>
+              <GroupAddresses>
+                <GroupAddress Address="2305" Key="$encGroupKey" />
+              </GroupAddresses>
+            </Keyring>
+        """.trimIndent()
+
+        val keyring = KnxKeyringReader.parseKeyringXml(officialKeyringXml, testPassword)
+        assertEquals("OfficialSchemaProject", keyring.projectName)
+
+        // Address 2305 is 1/1/1 in 3-level
+        val ga3Level = GroupAddress.parse("1/1/1")
+        val gaRaw = GroupAddress.fromRaw(2305)
+
+        assertTrue(keyring.isGroupSecure(ga3Level), "Group address 1/1/1 must match keyring raw 2305")
+        assertTrue(keyring.isGroupSecure(gaRaw), "Group address raw 2305 must match keyring raw 2305")
+        assertEquals("11223344556677889900AABBCCDDEEFF", keyring.groupKeysHex[ga3Level])
+
+        val devAddr = IndividualAddress.parse("1.1.50")
+        assertTrue(keyring.isDeviceSecure(devAddr), "Device 1.1.50 must be secure in keyring")
+        assertEquals("FEDCBA9876543210FEDCBA9876543210", keyring.deviceToolKeysHex[devAddr])
+    }
+
+    @Test
     fun parseRealWorldUserKnxprojIfPresent() {
         val candidates = listOf(
             File("C:/Users/stama/.gemini/antigravity/scratch/latest_final.knxproj"),
@@ -358,6 +476,19 @@ class KnxProjReaderTest {
         println("isProtected: $isProtected")
         val proj = KnxProjParser.openAndParse(userFile, password = null)
         println("Parsed project: name='${proj.name}', devices=${proj.allDevices.size}, GAs=${proj.groupAddresses.size}")
+        
+        val secureDevs = proj.allDevices.values.filter { it.isSecure }
+        val plainDevs = proj.allDevices.values.filter { !it.isSecure }
+        println("Secure devices count: ${secureDevs.size} -> ${secureDevs.map { "${it.address} '${it.name}'" }}")
+        println("Plain devices count: ${plainDevs.size}")
+        assertEquals(2, secureDevs.size, "Exactly the 2 KNX Secure Gateways should be secure")
+        assertEquals(261, plainDevs.size, "The other 261 devices should be plain")
+
+        val secureGas = proj.groupAddresses.values.filter { it.isSecure }
+        val plainGas = proj.groupAddresses.values.filter { !it.isSecure }
+        println("Secure GAs count: ${secureGas.size}")
+        println("Plain GAs count: ${plainGas.size}")
+        
         println("Areas: ${proj.areas.map { "Area ${it.area} '${it.name}': ${it.lines.size} lines" }}")
         val allFuncs = proj.locations.flatMap { it.collectAllFunctions() }
         val allLocGas = proj.locations.flatMap { it.collectAllGroupAddresses() }

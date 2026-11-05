@@ -91,8 +91,16 @@ object KnxProjParser {
             val name = gaEl.getAttribute("Name")
             val desc = gaEl.getAttribute("Description")
             val dpt = DptCodec.normalizeDptId(gaEl.getAttribute("DatapointType"))
-            val hasDirectSec = gaEl.getAttribute("SecurityMode").equals("Secured", ignoreCase = true) ||
-                gaEl.getElementsByTagName("Security").elements().isNotEmpty() ||
+            val secModeAttr = gaEl.getAttribute("SecurityMode").trim()
+            val secAttr = gaEl.getAttribute("Security").trim()
+            val isSecAttr = gaEl.getAttribute("IsSecure").trim()
+            val hasSecElem = gaEl.getElementsByTagName("Security").elements().isNotEmpty()
+            val hasDirectSec = secModeAttr.equals("Secured", ignoreCase = true) ||
+                secModeAttr.equals("On", ignoreCase = true) ||
+                secAttr.equals("Secured", ignoreCase = true) ||
+                secAttr.equals("On", ignoreCase = true) ||
+                isSecAttr.equals("true", ignoreCase = true) ||
+                hasSecElem ||
                 (parsedKeyring?.isGroupSecure(ga) == true)
             gaByRaw[ga] = GroupAddressInfo(
                 address = ga,
@@ -136,14 +144,27 @@ object KnxProjParser {
                         deviceIdToAddress[devId] = ia
                     }
 
+                    val devSecMode = devEl.getAttribute("SecurityMode").trim()
+                    val devSecAttr = devEl.getAttribute("Security").trim()
+                    val devIsSec = devEl.getAttribute("IsSecure").trim()
                     val secElements = devEl.getElementsByTagName("Security").elements()
                     val hasSecurity = secElements.any { secEl ->
-                        secEl.attributes.length > 0 ||
-                        secEl.hasAttribute("SequenceNumber") ||
-                        secEl.hasAttribute("LoadedDeviceAuthenticationCodeHash") ||
-                        secEl.hasAttribute("LoadedDeviceManagementPasswordHash")
-                    } || devEl.getAttribute("SecurityMode").equals("Secured", ignoreCase = true) ||
-                       (parsedKeyring?.isDeviceSecure(ia) == true)
+                        val sm = secEl.getAttribute("SecurityMode").trim()
+                        val sc = secEl.getAttribute("Security").trim()
+                        val authHash = secEl.getAttribute("LoadedDeviceAuthenticationCodeHash").trim()
+                        val pwdHash = secEl.getAttribute("LoadedDeviceManagementPasswordHash").trim()
+                        val toolKey = secEl.getAttribute("LoadedToolKey").trim()
+                        authHash.isNotEmpty() ||
+                        pwdHash.isNotEmpty() ||
+                        toolKey.isNotEmpty() ||
+                        sm.equals("Secured", ignoreCase = true) || sm.equals("On", ignoreCase = true) ||
+                        sc.equals("Secured", ignoreCase = true) || sc.equals("On", ignoreCase = true)
+                    } || devSecMode.equals("Secured", ignoreCase = true) ||
+                         devSecMode.equals("On", ignoreCase = true) ||
+                         devSecAttr.equals("Secured", ignoreCase = true) ||
+                         devSecAttr.equals("On", ignoreCase = true) ||
+                         devIsSec.equals("true", ignoreCase = true) ||
+                         (parsedKeyring?.isDeviceSecure(ia) == true)
 
                     val prodRef = devEl.getAttribute("ProductRefId").trim()
                     val mfrId = prodRef.substringBefore('_', "")
@@ -161,6 +182,36 @@ object KnxProjParser {
                         val objNum = extractObjectNumber(refId) ?: coIdx
                         val flags = parseComFlags(coEl)
                         val sizeLabel = coEl.getAttribute("ObjectSize").trim().ifBlank { inferSizeLabel(coDpt) }
+
+                        val coSecMode = coEl.getAttribute("SecurityMode").trim()
+                        val coSecAttr = coEl.getAttribute("Security").trim()
+                        val coDataSec = coEl.getAttribute("DataSecurity").trim()
+                        val coIsSec = coEl.getAttribute("IsSecure").trim()
+                        val coSecReq = coEl.getAttribute("SecurityRequired").trim()
+                        val coSecElems = coEl.getElementsByTagName("Security").elements()
+
+                        val coExplicitOff = coSecMode.equals("Off", ignoreCase = true) ||
+                            coSecAttr.equals("Off", ignoreCase = true) ||
+                            coDataSec.equals("Off", ignoreCase = true) ||
+                            coIsSec.equals("false", ignoreCase = true) ||
+                            coSecReq.equals("None", ignoreCase = true)
+
+                        val coExplicitOn = coSecMode.equals("Secured", ignoreCase = true) ||
+                            coSecMode.equals("On", ignoreCase = true) ||
+                            coSecAttr.equals("Secured", ignoreCase = true) ||
+                            coSecAttr.equals("On", ignoreCase = true) ||
+                            coDataSec.equals("Secured", ignoreCase = true) ||
+                            coDataSec.equals("On", ignoreCase = true) ||
+                            coIsSec.equals("true", ignoreCase = true) ||
+                            coSecElems.isNotEmpty()
+
+                        // ComObject security: explicitly configured ON, or parent device is secure (hasSecurity == true) and ComObject has not opted out
+                        val isCoSecure = when {
+                            coExplicitOff -> false
+                            coExplicitOn -> true
+                            hasSecurity -> true
+                            else -> false
+                        }
 
                         val refKeys = mutableListOf<String>()
                         val linksAttr = coEl.getAttribute("Links").trim()
@@ -192,7 +243,7 @@ object KnxProjParser {
                             gaByRaw[ga] = existing.copy(
                                 dpt = existing.dpt ?: coDpt,
                                 linkedObjects = existing.linkedObjects + linkObj,
-                                isSecure = existing.isSecure || hasSecurity,
+                                isSecure = existing.isSecure || isCoSecure,
                             )
                         }
                         devComObjects += DeviceComObject(
@@ -214,7 +265,7 @@ object KnxProjParser {
                         val ga = gaKeyToAddress[rk] ?: gaKeyToAddress[rk.substringAfter('_', rk)] ?: continue
                         devLinkedGas += ga
                         val existing = gaByRaw[ga]
-                        if (existing != null && hasSecurity) {
+                        if (existing != null && hasSecurity && (devSecMode.equals("Secured", ignoreCase = true) || devSecMode.equals("On", ignoreCase = true))) {
                             gaByRaw[ga] = existing.copy(isSecure = true)
                         }
                     }
@@ -271,13 +322,23 @@ object KnxProjParser {
             }
         }
 
+        val finalAreas = if (parsedKeyring != null) {
+            areas.map { area ->
+                area.copy(lines = area.lines.map { line ->
+                    line.copy(devices = line.devices.map { dev ->
+                        if (parsedKeyring.isDeviceSecure(dev.address)) dev.copy(isSecure = true) else dev
+                    })
+                })
+            }
+        } else areas
+
         return KnxProject(
             projectId = projectId,
             name = projectName,
             etsVersion = etsVersion,
             groupAddressStyle = groupAddressStyle,
             passwordProtected = archive.passwordProtected,
-            areas = areas.sortedBy { it.area },
+            areas = finalAreas.sortedBy { it.area },
             groupAddresses = gaByRaw,
             groupRanges = groupRanges,
             locations = locations,
@@ -437,37 +498,69 @@ object KnxKeyringReader {
         val iv = EtsCrypto.deriveKeyringIv(created)
 
         val backboneHex = doc.getElementsByTagName("Backbone").elements().firstOrNull()
-            ?.getAttribute("Key")
+            ?.let { el ->
+                (el.getAttribute("Key").ifBlank {
+                    el.getElementsByTagName("Key").elements().firstOrNull()?.textContent ?: ""
+                }).trim()
+            }
             ?.takeIf { it.isNotBlank() }
-            ?.let { HexBytes.toHex(EtsCrypto.decryptKeyringAttribute(it, aesKey, iv), "") }
+            ?.let {
+                try {
+                    HexBytes.toHex(EtsCrypto.decryptKeyringAttribute(it, aesKey, iv), "")
+                } catch (_: Exception) { null }
+            }
 
         val interfaces = doc.getElementsByTagName("Interface").elements().mapNotNull { el ->
-            val ia = IndividualAddress.parseOrNull(el.getAttribute("IndividualAddress")) ?: return@mapNotNull null
+            val addrStr = (el.getAttribute("IndividualAddress").ifBlank { el.getAttribute("Address") }).trim()
+            val ia = IndividualAddress.parseOrNull(addrStr) ?: return@mapNotNull null
             val userEl = el.getElementsByTagName("User").elements().firstOrNull()
+            val userPwd = (userEl?.getAttribute("Password") ?: "").ifBlank {
+                userEl?.getElementsByTagName("Password")?.elements()?.firstOrNull()?.textContent ?: ""
+            }.trim()
+            val userAuth = (userEl?.getAttribute("Authentication") ?: "").ifBlank {
+                userEl?.getElementsByTagName("Authentication")?.elements()?.firstOrNull()?.textContent ?: ""
+            }.trim()
+
             KeyringInterface(
                 individualAddress = ia,
                 host = el.getAttribute("Host").takeIf { it.isNotBlank() },
                 userId = userEl?.getAttribute("Id")?.toIntOrNull(),
-                userPasswordHashOrPlain = userEl?.getAttribute("Password")?.takeIf { it.isNotBlank() }
-                    ?.let { EtsCrypto.decryptKeyringPasswordString(it, aesKey, iv) },
-                authCodePlain = userEl?.getAttribute("Authentication")?.takeIf { it.isNotBlank() }
-                    ?.let { EtsCrypto.decryptKeyringPasswordString(it, aesKey, iv) },
+                userPasswordHashOrPlain = userPwd.takeIf { it.isNotBlank() }
+                    ?.let { try { EtsCrypto.decryptKeyringPasswordString(it, aesKey, iv) } catch (_: Exception) { null } },
+                authCodePlain = userAuth.takeIf { it.isNotBlank() }
+                    ?.let { try { EtsCrypto.decryptKeyringPasswordString(it, aesKey, iv) } catch (_: Exception) { null } },
             )
         }
 
         val groupKeysHex = buildMap {
-            for (el in doc.getElementsByTagName("Group").elements()) {
-                val ga = GroupAddress.parseOrNull(el.getAttribute("Address")) ?: continue
-                val keyB64 = el.getAttribute("Key").takeIf { it.isNotBlank() } ?: continue
-                put(ga, HexBytes.toHex(EtsCrypto.decryptKeyringAttribute(keyB64, aesKey, iv), ""))
+            val groupElements = doc.getElementsByTagName("GroupAddress").elements() +
+                doc.getElementsByTagName("Group").elements()
+            for (el in groupElements) {
+                val addrStr = (el.getAttribute("Address").ifBlank { el.getAttribute("GroupAddress") }).trim()
+                if (addrStr.isBlank()) continue
+                val ga = GroupAddress.parseOrNull(addrStr) ?: continue
+                val keyB64 = (el.getAttribute("Key").ifBlank {
+                    el.getElementsByTagName("Key").elements().firstOrNull()?.textContent ?: ""
+                }).trim()
+                if (keyB64.isBlank()) continue
+                try {
+                    put(ga, HexBytes.toHex(EtsCrypto.decryptKeyringAttribute(keyB64, aesKey, iv), ""))
+                } catch (_: Exception) {}
             }
         }
 
         val deviceToolKeysHex = buildMap {
             for (el in doc.getElementsByTagName("Device").elements()) {
-                val ia = IndividualAddress.parseOrNull(el.getAttribute("IndividualAddress")) ?: continue
-                val tkB64 = el.getAttribute("ToolKey").takeIf { it.isNotBlank() } ?: continue
-                put(ia, HexBytes.toHex(EtsCrypto.decryptKeyringAttribute(tkB64, aesKey, iv), ""))
+                val addrStr = (el.getAttribute("IndividualAddress").ifBlank { el.getAttribute("Address") }).trim()
+                if (addrStr.isBlank()) continue
+                val ia = IndividualAddress.parseOrNull(addrStr) ?: continue
+                val tkB64 = (el.getAttribute("ToolKey").ifBlank {
+                    el.getElementsByTagName("ToolKey").elements().firstOrNull()?.textContent ?: ""
+                }).trim()
+                if (tkB64.isBlank()) continue
+                try {
+                    put(ia, HexBytes.toHex(EtsCrypto.decryptKeyringAttribute(tkB64, aesKey, iv), ""))
+                } catch (_: Exception) {}
             }
         }
 
