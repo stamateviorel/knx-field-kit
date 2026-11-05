@@ -79,14 +79,24 @@ fun MobileFieldApp(
                                 .fillMaxWidth()
                                 .clickable { showProjectSheet = true }
                         ) {
-                            Text(
-                                text = state.project?.name ?: "KNX Field Kit",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    text = state.project?.name ?: "KNX Field Kit",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                MobileBadge(
+                                    text = APP_VERSION,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                             val proj = state.project
                             Text(
                                 text = if (proj != null) {

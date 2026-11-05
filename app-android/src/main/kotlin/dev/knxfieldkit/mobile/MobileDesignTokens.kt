@@ -98,6 +98,8 @@ val MobileLightPalette = MobileColorScheme(
     isDark = false,
 )
 
+const val APP_VERSION = "v3.13"
+
 val LocalMobileColors = staticCompositionLocalOf { MobileDarkPalette }
 
 object EtsShapes {

@@ -13,13 +13,26 @@ android {
         applicationId = "dev.knxfieldkit.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "3.1.0"
+        versionCode = 13
+        versionName = "3.13"
+    }
+
+    signingConfigs {
+        create("shared") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 
@@ -30,6 +43,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
