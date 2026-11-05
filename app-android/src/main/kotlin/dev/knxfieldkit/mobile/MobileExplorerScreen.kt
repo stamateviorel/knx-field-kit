@@ -5040,6 +5040,10 @@ private fun MobileGroupAddressCard(
 
             ) {
 
+                val isGaSecure = ga.isSecure || project.keyring?.isGroupSecure(ga.address) == true
+
+                EtsGroupAddressTagIcon(isSecure = isGaSecure, sizeDp = 16.dp)
+
                 Surface(
 
                     shape = EtsShapes.Badge,
@@ -5068,47 +5072,11 @@ private fun MobileGroupAddressCard(
 
 
 
-                if (ga.isSecure) {
-
-                    Surface(
-
-                        shape = EtsShapes.Badge,
-
-                        color = Color(0xFF005596),
-
-                    ) {
-
-                        Row(
-
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-
-                            verticalAlignment = Alignment.CenterVertically,
-
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-
-                        ) {
-
-                            Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
-
-                            Text(
-
-                                text = "SECURE",
-
-                                style = MaterialTheme.typography.labelSmall,
-
-                                fontSize = 7.5.sp,
-
-                                fontWeight = FontWeight.Bold,
-
-                                color = Color.White,
-
-                            )
-
-                        }
-
-                    }
-
-                }
+                if (isGaSecure) {
+EtsSecureBadge(label = "SEC")
+} else {
+EtsPlainBadge(label = "PLAIN")
+}
 
 
 
@@ -5468,6 +5436,8 @@ fun MobileDeviceCard(
 
         ) {
 
+            val isDevSecure = device.isSecure || project.keyring?.isDeviceSecure(device.address) == true
+
             Row(
 
                 verticalAlignment = Alignment.CenterVertically,
@@ -5475,7 +5445,7 @@ fun MobileDeviceCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
 
             ) {
-EtsDeviceIcon(isSecure = device.isSecure, sizeDp = 18.dp)
+EtsDeviceIcon(isSecure = isDevSecure, sizeDp = 18.dp)
 
 
                 Surface(
@@ -5506,8 +5476,10 @@ EtsDeviceIcon(isSecure = device.isSecure, sizeDp = 18.dp)
 
 
 
-                if (device.isSecure) {
-EtsSecureBadge()
+                if (isDevSecure) {
+EtsSecureBadge(label = "SEC")
+} else {
+EtsPlainBadge(label = "PLAIN")
 }
 
 
@@ -6819,46 +6791,10 @@ private fun BuildingTreeFunctionItem(
                                 )
 
                                 if (isFunctionSecure) {
-
-                                    Surface(
-
-                                        shape = EtsShapes.Badge,
-
-                                        color = Color(0xFF005596),
-
-                                    ) {
-
-                                        Row(
-
-                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
-
-                                            verticalAlignment = Alignment.CenterVertically,
-
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-
-                                        ) {
-
-                                            Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
-
-                                            Text(
-
-                                                text = "SECURE",
-
-                                                style = MaterialTheme.typography.labelSmall,
-
-                                                fontSize = 7.5.sp,
-
-                                                fontWeight = FontWeight.Bold,
-
-                                                color = Color.White,
-
-                                            )
-
-                                        }
-
-                                    }
-
-                                }
+EtsSecureBadge(label = "SEC")
+} else {
+EtsPlainBadge(label = "PLAIN")
+}
 
                             }
 
@@ -8160,47 +8096,12 @@ EtsGroupAddressTagIcon(isSecure = ga.isSecure, sizeDp = 15.dp)
 
 
 
-                        if (ga.isSecure) {
-
-                            Surface(
-
-                                shape = EtsShapes.Badge,
-
-                                color = Color(0xFF005596),
-
-                            ) {
-
-                                Row(
-
-                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
-
-                                    verticalAlignment = Alignment.CenterVertically,
-
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-
-                                ) {
-
-                                    Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
-
-                                    Text(
-
-                                        text = "SECURE",
-
-                                        style = MaterialTheme.typography.labelSmall,
-
-                                        fontSize = 7.5.sp,
-
-                                        fontWeight = FontWeight.Bold,
-
-                                        color = Color.White,
-
-                                    )
-
-                                }
-
-                            }
-
-                        }
+                        val isGa2Sec = ga.isSecure
+                        if (isGa2Sec) {
+EtsSecureBadge(label = "SEC")
+} else {
+EtsPlainBadge(label = "PLAIN")
+}
 
 
 
@@ -8392,8 +8293,11 @@ EtsDeviceIcon(isSecure = dev.isSecure || state.keyring?.isDeviceSecure(dev.addre
 
 
 
-                if (dev.isSecure || state.keyring?.isDeviceSecure(dev.address) == true) {
-EtsSecureBadge()
+                val isDev2Sec = dev.isSecure || state.keyring?.isDeviceSecure(dev.address) == true
+                if (isDev2Sec) {
+EtsSecureBadge(label = "SEC")
+} else {
+EtsPlainBadge(label = "PLAIN")
 }
 
 
@@ -10864,47 +10768,12 @@ EtsGroupAddressTagIcon(isSecure = ga.isSecure, sizeDp = 15.dp)
 
 
 
-                        if (ga.isSecure) {
-
-                            Surface(
-
-                                shape = EtsShapes.Badge,
-
-                                color = Color(0xFF005596),
-
-                            ) {
-
-                                Row(
-
-                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
-
-                                    verticalAlignment = Alignment.CenterVertically,
-
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-
-                                ) {
-
-                                    Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
-
-                                    Text(
-
-                                        text = "SECURE",
-
-                                        style = MaterialTheme.typography.labelSmall,
-
-                                        fontSize = 7.5.sp,
-
-                                        fontWeight = FontWeight.Bold,
-
-                                        color = Color.White,
-
-                                    )
-
-                                }
-
-                            }
-
-                        }
+                        val isGa2Sec = ga.isSecure
+                        if (isGa2Sec) {
+EtsSecureBadge(label = "SEC")
+} else {
+EtsPlainBadge(label = "PLAIN")
+}
 
 
 
@@ -11692,47 +11561,12 @@ EtsDeviceIcon(isSecure = dev.isSecure, sizeDp = 18.dp)
 
 
 
-                        if (dev.isSecure) {
-
-                            Surface(
-
-                                shape = EtsShapes.Badge,
-
-                                color = Color(0xFF005596),
-
-                            ) {
-
-                                Row(
-
-                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp),
-
-                                    verticalAlignment = Alignment.CenterVertically,
-
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-
-                                ) {
-
-                                    Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(8.dp))
-
-                                    Text(
-
-                                        text = "SECURE",
-
-                                        style = MaterialTheme.typography.labelSmall,
-
-                                        fontSize = 7.5.sp,
-
-                                        fontWeight = FontWeight.Bold,
-
-                                        color = Color.White,
-
-                                    )
-
-                                }
-
-                            }
-
-                        }
+                        val isDev3Sec = dev.isSecure
+                        if (isDev3Sec) {
+EtsSecureBadge(label = "SEC")
+} else {
+EtsPlainBadge(label = "PLAIN")
+}
 
 
 

@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -593,7 +595,13 @@ fun MobileGroupInspectorSheet(
                 Text(ga.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val isGaSecure = ga.isSecure || project?.keyring?.isGroupSecure(ga.address) == true
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (isGaSecure) {
+                    EtsSecureBadge(label = "KNX SECURE (AES-CCM)")
+                } else {
+                    EtsPlainBadge(label = "PLAIN (UNSECURED)")
+                }
                 Surface(
                     shape = EtsShapes.Card,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -852,15 +860,30 @@ fun MobileTelegramDetailSheet(
                     if (t.isSecure) {
                         Surface(
                             shape = EtsShapes.Badge,
-                            color = Color(0xFF005596),
+                            color = EtsColors.KnxBlue,
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                Icon(Icons.Default.Shield, contentDescription = "KNX Secure", tint = Color.White, modifier = Modifier.size(12.dp))
-                                Text("KNX SECURE CEMI FRAME (Authenticated & Encrypted)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                EtsSecureShield(sizeDp = 13.dp)
+                                Text("KNX SECURE CEMI FRAME (Authenticated & Encrypted)", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    } else {
+                        Surface(
+                            shape = EtsShapes.Badge,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.outline))
+                                Text("STANDARD PLAIN TEXT FRAME (Unencrypted Bus Traffic)", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

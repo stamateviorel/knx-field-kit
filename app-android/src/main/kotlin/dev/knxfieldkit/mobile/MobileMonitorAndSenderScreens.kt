@@ -123,6 +123,7 @@ fun MobileMonitorScreen(
     val q = state.monitorSearchQuery.trim().lowercase()
 
     var apciFilter by remember { mutableStateOf("ALL") } // "ALL", "WRITE", "READ", "RESP"
+    var securityFilter by remember { mutableStateOf("ALL") } // "ALL", "SECURE", "PLAIN"
 
     var showTopTalkers by remember { mutableStateOf(false) }
 
@@ -148,7 +149,7 @@ fun MobileMonitorScreen(
 
 
 
-    val filtered = remember(state.telegrams, q, state.monitorGhostOnly, apciFilter) {
+    val filtered = remember(state.telegrams, q, state.monitorGhostOnly, apciFilter, securityFilter, state.keyring) {
 
         state.telegrams.filter { row ->
 
@@ -159,6 +160,10 @@ fun MobileMonitorScreen(
             if (apciFilter == "READ" && row.telegram.apci != ApciType.GROUP_READ) return@filter false
 
             if (apciFilter == "RESP" && row.telegram.apci != ApciType.GROUP_RESPONSE) return@filter false
+
+            val isSecTg = row.telegram.isSecure || (row.telegram.destinationGroup?.let { state.project?.findGroupAddress(it)?.isSecure == true || state.keyring?.isGroupSecure(it) == true } == true)
+            if (securityFilter == "SECURE" && !isSecTg) return@filter false
+            if (securityFilter == "PLAIN" && isSecTg) return@filter false
 
 
 
@@ -1033,6 +1038,23 @@ fun MobileMonitorScreen(
                 }
 
                 item {
+                    VerticalDivider(modifier = Modifier.height(20.dp).padding(horizontal = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                }
+
+                val secFilters = listOf("ALL", "SECURE", "PLAIN")
+                items(secFilters) { sf ->
+                    val selected = securityFilter == sf
+                    FilterChip(
+                        selected = selected,
+                        onClick = { securityFilter = sf },
+                        leadingIcon = if (sf == "SECURE") { { EtsSecureShield(sizeDp = 10.dp) } } else null,
+                        label = { Text(if (sf == "ALL") "All Sec" else sf, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.height(28.dp),
+                    )
+                }
+
+                item {
 
                     FilterChip(
 
@@ -1240,7 +1262,23 @@ fun MobileMonitorScreen(
 
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
 
-                            modifier = Modifier.width(62.dp),
+                            modifier = Modifier.width(58.dp),
+
+                        )
+
+                        Text(
+
+                            text = "SEC",
+
+                            fontSize = 9.sp,
+
+                            fontFamily = FontFamily.Monospace,
+
+                            fontWeight = FontWeight.Bold,
+
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+                            modifier = Modifier.width(36.dp),
 
                         )
 
@@ -1434,11 +1472,18 @@ fun MobileMonitorScreen(
 
                                         color = MaterialTheme.colorScheme.onSurface,
 
-                                        modifier = Modifier.width(62.dp),
+                                        modifier = Modifier.width(58.dp),
 
                                     )
 
-
+                                    val isSecureTg = t.isSecure || (t.destinationGroup?.let { state.project?.findGroupAddress(it)?.isSecure == true || state.keyring?.isGroupSecure(it) == true } == true)
+                                    Box(modifier = Modifier.width(36.dp), contentAlignment = Alignment.CenterStart) {
+                                        if (isSecureTg) {
+                                            EtsSecureBadge(label = "SEC")
+                                        } else {
+                                            EtsPlainBadge(label = "PLAIN")
+                                        }
+                                    }
 
                                     Surface(shape = EtsShapes.Badge, color = badgeColor) {
 
@@ -1482,10 +1527,7 @@ fun MobileMonitorScreen(
 
 
 
-                                    val isSecureTg = t.isSecure || (t.destinationGroup?.let { state.project?.findGroupAddress(it)?.isSecure == true || state.keyring?.isGroupSecure(it) == true } == true)
-                                    if (isSecureTg) {
-                                        EtsSecureBadge(label = "SEC")
-                                    }
+
 
 
 
@@ -1813,6 +1855,20 @@ fun MobileSenderScreen(
 
                     }
 
+                }
+
+                val parsedTargetGa = GroupAddress.parseOrNull(gaText)
+                val isTargetGaSecure = (parsedTargetGa != null && state.project?.findGroupAddress(parsedTargetGa)?.isSecure == true) ||
+                    (parsedTargetGa != null && state.keyring?.isGroupSecure(parsedTargetGa) == true)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (isTargetGaSecure) {
+                        EtsSecureBadge(label = "KNX SECURE GA (ENCRYPTED BUS TRANSMISSION)")
+                    } else {
+                        EtsPlainBadge(label = "STANDARD PLAIN TEXT GA (UNENCRYPTED)")
+                    }
                 }
 
 

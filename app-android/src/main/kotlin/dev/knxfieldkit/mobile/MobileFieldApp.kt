@@ -98,9 +98,17 @@ fun MobileFieldApp(
                                 )
                             }
                             val proj = state.project
+                            val secDevCount = remember(proj, state.keyring) {
+                                proj?.allDevices?.values?.count { it.isSecure || state.keyring?.isDeviceSecure(it.address) == true } ?: 0
+                            }
+                            val plainDevCount = (proj?.allDevices?.size ?: 0) - secDevCount
                             Text(
                                 text = if (proj != null) {
-                                    "${proj.allDevices.size} dev • ${proj.groupAddresses.size} GA • ${proj.etsVersion.ifBlank { "ETS" }}"
+                                    if (secDevCount > 0) {
+                                        "${proj.allDevices.size} dev ($secDevCount 🛡️ Sec • $plainDevCount Plain) • ${proj.groupAddresses.size} GA"
+                                    } else {
+                                        "${proj.allDevices.size} dev (All Plain) • ${proj.groupAddresses.size} GA"
+                                    }
                                 } else {
                                     "Tap to open .knxproj / .knxkeys"
                                 },
@@ -183,7 +191,7 @@ fun MobileFieldApp(
                                         modifier = Modifier.size(11.dp),
                                     )
                                     Text(
-                                        text = "KEYS (${kr.groupKeysHex.size})",
+                                        text = "KEYRING (${kr.groupKeysHex.size + kr.deviceToolKeysHex.size})",
                                         fontSize = 9.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,

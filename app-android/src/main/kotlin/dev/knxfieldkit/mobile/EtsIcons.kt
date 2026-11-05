@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -146,6 +148,62 @@ fun EtsSecureBadge(
             fontFamily = FontFamily.Monospace,
             color = Color.White,
             maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Standard ETS engineering Unsecured / Plain text badge pill [PLAIN].
+ * Explicitly indicates non-encrypted, open bus communication.
+ */
+@Composable
+fun EtsPlainBadge(
+    modifier: Modifier = Modifier,
+    label: String = "PLAIN",
+) {
+    Row(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, EtsShapes.Badge)
+            .border(0.8.dp, MaterialTheme.colorScheme.outlineVariant, EtsShapes.Badge)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.outline)
+        )
+        Text(
+            text = label,
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Unified ETS Security status badge showing either [SEC] or [PLAIN].
+ */
+@Composable
+fun EtsSecurityStatusBadge(
+    isSecure: Boolean,
+    compact: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    if (isSecure) {
+        EtsSecureBadge(
+            modifier = modifier,
+            label = if (compact) "SEC" else "KNX SECURE",
+        )
+    } else {
+        EtsPlainBadge(
+            modifier = modifier,
+            label = if (compact) "PLAIN" else "PLAIN (UNSECURED)",
         )
     }
 }
@@ -933,10 +991,12 @@ fun EtsDeviceIcon(
 /**
  * Authentic ETS Communication Object Icon (groupobject.png):
  * Yellow cylinder / barrel plug with connector notches.
+ * Overlays KNX Secure blue shield if [isSecure] is true.
  */
 @Composable
 fun EtsComObjectIcon(
     modifier: Modifier = Modifier,
+    isSecure: Boolean = false,
     sizeDp: Dp = 15.dp,
 ) {
     Canvas(modifier = modifier.size(sizeDp)) {
@@ -971,6 +1031,33 @@ fun EtsComObjectIcon(
         // Connector socket notches
         drawRect(Color(0xFF78350F), Offset(w * 0.32f, h * 0.46f), Size(w * 0.10f, h * 0.18f))
         drawRect(Color(0xFF78350F), Offset(w * 0.58f, h * 0.46f), Size(w * 0.10f, h * 0.18f))
+
+        // If KNX Secure: overlay blue shield
+        if (isSecure) {
+            val shieldW = w * 0.54f
+            val shieldH = h * 0.60f
+            val ox = w * 0.46f
+            val oy = -h * 0.04f
+            val sPath = Path().apply {
+                moveTo(ox + shieldW * 0.5f, oy)
+                lineTo(ox + shieldW, oy + shieldH * 0.20f)
+                lineTo(ox + shieldW * 0.95f, oy + shieldH * 0.65f)
+                cubicTo(
+                    ox + shieldW * 0.85f, oy + shieldH * 0.85f,
+                    ox + shieldW * 0.55f, oy + shieldH * 0.98f,
+                    ox + shieldW * 0.5f, oy + shieldH,
+                )
+                cubicTo(
+                    ox + shieldW * 0.45f, oy + shieldH * 0.98f,
+                    ox + shieldW * 0.15f, oy + shieldH * 0.85f,
+                    ox + shieldW * 0.05f, oy + shieldH * 0.65f,
+                )
+                lineTo(ox, oy + shieldH * 0.20f)
+                close()
+            }
+            drawPath(sPath, color = EtsColors.KnxBlue, style = Fill)
+            drawPath(sPath, color = Color.White, style = Stroke(width = 0.7f))
+        }
     }
 }
 

@@ -13,8 +13,8 @@ android {
         applicationId = "dev.knxfieldkit.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "3.13"
+        versionCode = 14
+        versionName = "3.14"
     }
 
     signingConfigs {
