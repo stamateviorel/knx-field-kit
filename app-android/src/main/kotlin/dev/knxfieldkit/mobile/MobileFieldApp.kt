@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.knxfieldkit.app.AppController
 import dev.knxfieldkit.app.AppTab
+import dev.knxfieldkit.app.ExplorerSelection
 import dev.knxfieldkit.app.ThemeMode
 import dev.knxfieldkit.model.ConnectionState
 import dev.knxfieldkit.model.EnrichedTelegram
@@ -42,6 +43,25 @@ fun MobileFieldApp(
     var showFastCommander by remember { mutableStateOf(false) }
     var inspectedGroup by remember { mutableStateOf<GroupAddressInfo?>(null) }
     var inspectedTelegram by remember { mutableStateOf<EnrichedTelegram?>(null) }
+    var activeExplorerPane by remember { mutableStateOf(MobileExplorerPane.ROOMS) }
+
+    LaunchedEffect(state.explorerSelection) {
+        when (state.explorerSelection) {
+            is ExplorerSelection.Area,
+            is ExplorerSelection.Line,
+            is ExplorerSelection.Device,
+            is ExplorerSelection.TopologyRoot -> {
+                activeExplorerPane = MobileExplorerPane.TOPOLOGY
+            }
+            is ExplorerSelection.GroupRange,
+            is ExplorerSelection.AllGroupAddresses -> {
+                activeExplorerPane = MobileExplorerPane.GROUPS
+            }
+            is ExplorerSelection.BuildingSpace -> {
+                activeExplorerPane = MobileExplorerPane.ROOMS
+            }
+        }
+    }
 
     MobileFieldKitTheme(themeMode = state.themeMode) {
         Box(
@@ -210,6 +230,8 @@ fun MobileFieldApp(
                             controller = controller,
                             onInspectGroupSheet = { inspectedGroup = it },
                             onOpenProjectFile = onOpenProjectFile,
+                            activePane = activeExplorerPane,
+                            onPaneChange = { activeExplorerPane = it },
                         )
                         AppTab.MONITOR -> MobileMonitorScreen(
                             state = state,
@@ -263,34 +285,49 @@ fun MobileFieldApp(
                     )
                 }
 
-                // Authentic Android Material 3 Navigation Bar
+                // Authentic ETS Material 3 Navigation Bar (5 Core ETS Pillars)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     tonalElevation = 2.dp,
                 ) {
-                    val navItems = listOf(
-                        Triple(AppTab.PROJECT, "Explorer", Icons.Default.AccountTree),
-                        Triple(AppTab.MONITOR, "Monitor", Icons.Default.GraphicEq),
-                        Triple(AppTab.SENDER, "Send", Icons.Default.Tune),
-                        Triple(AppTab.DIAGNOSTICS, "Diagnostics", Icons.Default.VerifiedUser),
+                    data class NavItem(
+                        val tab: AppTab,
+                        val pane: MobileExplorerPane?,
+                        val label: String,
+                        val icon: androidx.compose.ui.graphics.vector.ImageVector,
                     )
-                    navItems.forEach { (tab, label, icon) ->
-                        val selected = state.activeTab == tab
+                    val navItems = listOf(
+                        NavItem(AppTab.PROJECT, MobileExplorerPane.ROOMS, "Buildings", Icons.Default.Apartment),
+                        NavItem(AppTab.PROJECT, MobileExplorerPane.TOPOLOGY, "Topology", Icons.Default.AccountTree),
+                        NavItem(AppTab.PROJECT, MobileExplorerPane.GROUPS, "Group Addr", Icons.Default.Folder),
+                        NavItem(AppTab.MONITOR, null, "Monitor", Icons.Default.GraphicEq),
+                        NavItem(AppTab.DIAGNOSTICS, null, "Diagnostics", Icons.Default.VerifiedUser),
+                    )
+                    navItems.forEach { item ->
+                        val selected = when (item.tab) {
+                            AppTab.PROJECT -> state.activeTab == AppTab.PROJECT && activeExplorerPane == item.pane
+                            else -> state.activeTab == item.tab
+                        }
                         NavigationBarItem(
                             selected = selected,
-                            onClick = { controller.selectTab(tab) },
+                            onClick = {
+                                controller.selectTab(item.tab)
+                                if (item.pane != null) {
+                                    activeExplorerPane = item.pane
+                                }
+                            },
                             icon = {
                                 Icon(
-                                    imageVector = icon,
-                                    contentDescription = label,
+                                    imageVector = item.icon,
+                                    contentDescription = item.label,
                                     modifier = Modifier.size(22.dp),
                                 )
                             },
                             label = {
                                 Text(
-                                    text = label,
-                                    fontSize = 12.sp,
+                                    text = item.label,
+                                    fontSize = 11.sp,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                     maxLines = 1,
                                 )
